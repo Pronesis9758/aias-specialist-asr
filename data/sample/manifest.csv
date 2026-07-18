@@ -1,0 +1,5 @@
+sample_id,audio_path,reference_text,split,fixture_prediction,source,consent_status
+sample-001,fixture://sample-001,프레스 3호기 베어링 온도가 기준치를 초과했습니다.,test,프레스 삼오기 베어링 온도가 기준치를 초과했습니다.,synthetic,approved
+sample-002,fixture://sample-002,컨베이어 모터 전류를 확인해 주세요.,test,콘베이어 모터 전류를 확인해 주세요.,synthetic,approved
+sample-003,fixture://sample-003,비전 검사기 카메라를 재보정합니다.,test,비젼 검사기 카메라를 재보정합니다.,synthetic,approved
+sample-004,fixture://sample-004,설비 이상 이력을 조회해 주세요.,test,설비 이상 이력을 조회해 주세요.,synthetic,approved

@@ -1,0 +1,65 @@
+[project]
+name = "aias-specialist-asr"
+version = "0.1.0"
+description = "Reproducible manufacturing-domain Korean ASR experiment and reporting pipeline"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "faster-whisper>=1.1,<2",
+  "huggingface-hub>=0.34,<2",
+  "jiwer>=3,<5",
+  "matplotlib>=3.9,<4",
+  "pandas>=2.2,<4",
+  "psutil>=6,<8",
+  "python-docx>=1.2,<2",
+  "pyyaml>=6,<7",
+  "typer>=0.16,<1",
+]
+
+[project.optional-dependencies]
+data = [
+  "datasets>=3,<5",
+  "soundfile>=0.12,<1",
+]
+train = [
+  "accelerate>=1,<2",
+  "datasets>=3,<5",
+  "evaluate>=0.4,<1",
+  "librosa>=0.10,<1",
+  "peft>=0.14,<1",
+  "soundfile>=0.12,<1",
+  "torch>=2.5,<3",
+  "transformers>=4.46,<6",
+]
+dev = [
+  "nbclient>=0.10,<1",
+  "nbformat>=5.10,<6",
+  "pytest>=8,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.12,<1",
+]
+
+[project.scripts]
+aias = "aias_specialist.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aias_specialist"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/aias_specialist/cli.py" = ["B008"]
+"notebooks/*.ipynb" = ["E401", "I001"]

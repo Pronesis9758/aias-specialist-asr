@@ -1,0 +1,13 @@
+models:
+  Systran/faster-whisper-tiny:
+    repo_id: Systran/faster-whisper-tiny
+    requested_revision: main
+    resolved_revision: d90ca5fe260221311c53c58e660288d3deb8d356
+    roles:
+    - baseline
+  openai/whisper-tiny:
+    repo_id: openai/whisper-tiny
+    requested_revision: main
+    resolved_revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    roles:
+    - training
