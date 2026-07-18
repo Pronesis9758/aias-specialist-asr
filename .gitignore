@@ -1,0 +1,28 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.test_tmp/
+.ruff_cache/
+.coverage
+htmlcov/
+.env
+
+# Models and large/private data
+models/*
+!models/model-lock.yaml
+data/raw_audio/*
+!data/raw_audio/.gitkeep
+data/private/
+checkpoints/
+
+# Generated run artifacts and local state
+artifacts/
+backdata/*.sqlite3
+backdata/*.sqlite3-*
+reports/generated/
+
+# Notebook and OS noise
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
