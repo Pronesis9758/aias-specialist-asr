@@ -49,6 +49,23 @@ def _checkpoint(output_dir: Path, requested: str | None) -> str | bool | None:
     return str(candidates[-1]) if candidates else None
 
 
+def _lora_config_kwargs(values: dict[str, Any]) -> dict[str, Any]:
+    """Build a Whisper-compatible LoRA configuration.
+
+    Whisper consumes ``input_features`` instead of the text-model ``input_ids``
+    expected by PEFT's task-specific sequence-to-sequence wrapper. Leaving
+    ``task_type`` unset selects the generic PEFT wrapper and preserves Whisper's
+    forward signature.
+    """
+    return {
+        "r": int(values.get("lora_rank", 16)),
+        "lora_alpha": int(values.get("lora_alpha", 32)),
+        "lora_dropout": float(values.get("lora_dropout", 0.05)),
+        "target_modules": ["q_proj", "v_proj"],
+        "bias": "none",
+    }
+
+
 def train_whisper_lora(settings: Settings) -> Path:
     if not settings.training.enabled:
         raise ValueError("training.enabled is false in the selected config")
@@ -63,7 +80,7 @@ def train_whisper_lora(settings: Settings) -> Path:
         import torch
         from datasets import Dataset
         from jiwer import wer
-        from peft import LoraConfig, TaskType, get_peft_model
+        from peft import LoraConfig, get_peft_model
         from transformers import (
             Seq2SeqTrainer,
             Seq2SeqTrainingArguments,
@@ -112,14 +129,7 @@ def train_whisper_lora(settings: Settings) -> Path:
     model.config.forced_decoder_ids = None
     model.config.suppress_tokens = []
 
-    lora = LoraConfig(
-        r=int(values.get("lora_rank", 16)),
-        lora_alpha=int(values.get("lora_alpha", 32)),
-        lora_dropout=float(values.get("lora_dropout", 0.05)),
-        target_modules=["q_proj", "v_proj"],
-        bias="none",
-        task_type=TaskType.SEQ_2_SEQ_LM,
-    )
+    lora = LoraConfig(**_lora_config_kwargs(values))
     model = get_peft_model(model, lora)
     model.print_trainable_parameters()
 
