@@ -4,6 +4,7 @@ import pandas as pd
 
 from aias_specialist.training import (
     _extract_input_features,
+    _gradient_checkpointing_enabled,
     _lora_config_kwargs,
     _prediction_frame,
 )
@@ -28,6 +29,12 @@ def test_whisper_lora_config_applies_overrides() -> None:
     assert config["r"] == 8
     assert config["lora_alpha"] == 16
     assert config["lora_dropout"] == 0.1
+
+
+def test_whisper_lora_disables_gradient_checkpointing_by_default() -> None:
+    assert _gradient_checkpointing_enabled({}) is False
+    assert _gradient_checkpointing_enabled({"gradient_checkpointing": False}) is False
+    assert _gradient_checkpointing_enabled({"gradient_checkpointing": True}) is True
 
 
 def test_whisper_features_request_and_preserve_attention_mask() -> None:

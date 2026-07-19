@@ -30,6 +30,7 @@ training:
   revision: main
   method: lora
   output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints
+  gradient_checkpointing: false
   max_steps: 500
   save_steps: 50
   eval_steps: 50

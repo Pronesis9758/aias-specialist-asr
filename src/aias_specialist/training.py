@@ -80,6 +80,16 @@ def _lora_config_kwargs(values: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _gradient_checkpointing_enabled(values: dict[str, Any]) -> bool:
+    """Return the explicit checkpointing choice, disabled by default for Whisper LoRA.
+
+    PEFT freezes the base Whisper feature path. With checkpointing enabled, PyTorch can
+    receive no gradient-bearing checkpoint inputs and drop the graph before LoRA's backward
+    pass. The small Colab validation models fit on a T4 without this memory optimization.
+    """
+    return bool(values.get("gradient_checkpointing", False))
+
+
 def _decode_prediction_text(prediction_output: Any, processor: Any) -> list[str]:
     prediction_ids = prediction_output.predictions
     if isinstance(prediction_ids, tuple):
@@ -318,7 +328,7 @@ def train_whisper_lora(settings: Settings) -> Path:
             "learning_rate": float(values.get("learning_rate", 1e-4)),
             "max_steps": int(values.get("max_steps", 500)),
             "warmup_steps": int(values.get("warmup_steps", 50)),
-            "gradient_checkpointing": True,
+            "gradient_checkpointing": _gradient_checkpointing_enabled(values),
             "fp16": True,
             "predict_with_generate": True,
             "generation_max_length": 225,
