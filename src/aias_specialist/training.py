@@ -159,15 +159,15 @@ def _write_training_summary(
 
 - Project: {settings.project.name}
 - Training backend: Transformers Whisper + PEFT LoRA
-- Model: {metrics['training']['model_repo']}@{metrics['training']['model_revision']}
-- Train samples: {metrics['training']['train_samples']}
-- Validation samples: {metrics['training']['validation_samples']}
-- Test samples: {baseline['sample_count']}
-- Base Whisper test WER: {baseline['wer']:.4f}
-- Best LoRA test WER: {lora['wer']:.4f}
-- LoRA WER absolute reduction: {improvement['wer_absolute_reduction']:.4f}
-- Base Whisper test CER: {baseline['cer']:.4f}
-- Best LoRA test CER: {lora['cer']:.4f}
+- Model: {metrics["training"]["model_repo"]}@{metrics["training"]["model_revision"]}
+- Train samples: {metrics["training"]["train_samples"]}
+- Validation samples: {metrics["training"]["validation_samples"]}
+- Test samples: {baseline["sample_count"]}
+- Base Whisper test WER: {baseline["wer"]:.4f}
+- Best LoRA test WER: {lora["wer"]:.4f}
+- LoRA WER absolute reduction: {improvement["wer_absolute_reduction"]:.4f}
+- Base Whisper test CER: {baseline["cer"]:.4f}
+- Best LoRA test CER: {lora["cer"]:.4f}
 - Evidence confidence: low (small public general-Korean test split; single seed)
 - Human review required: transcript labels, privacy approval, domain terms, model trade-offs,
   and final report conclusions
@@ -283,9 +283,9 @@ def train_whisper_lora(settings: Settings) -> Path:
         dataset_frame["audio_duration_seconds"] = [
             float(librosa.get_duration(path=path)) for path in dataset_frame["audio"]
         ]
-        test_frame = dataset_frame.loc[
-            dataset_frame["split"].str.lower() == "test"
-        ].rename(columns={"audio": "audio_path", "sentence": "reference_text"})
+        test_frame = dataset_frame.loc[dataset_frame["split"].str.lower() == "test"].rename(
+            columns={"audio": "audio_path", "sentence": "reference_text"}
+        )
         dataset = Dataset.from_pandas(dataset_frame, preserve_index=False)
 
         def preprocess(record: dict[str, Any]) -> dict[str, Any]:
@@ -295,15 +295,15 @@ def train_whisper_lora(settings: Settings) -> Path:
             return record
 
         dataset = dataset.map(preprocess, remove_columns=["audio", "sentence"])
-        train_dataset = dataset.filter(
-            lambda row: row["split"].lower() == "train"
-        ).remove_columns(["split"])
+        train_dataset = dataset.filter(lambda row: row["split"].lower() == "train").remove_columns(
+            ["split"]
+        )
         eval_dataset = dataset.filter(
             lambda row: row["split"].lower() == "validation"
         ).remove_columns(["split"])
-        test_dataset = dataset.filter(
-            lambda row: row["split"].lower() == "test"
-        ).remove_columns(["split"])
+        test_dataset = dataset.filter(lambda row: row["split"].lower() == "test").remove_columns(
+            ["split"]
+        )
 
         collator = SpeechSeq2SeqCollator(
             processor=processor,
@@ -413,9 +413,7 @@ def train_whisper_lora(settings: Settings) -> Path:
             lora_runtime,
             "best_lora",
         )
-        lora_predictions.to_csv(
-            run_dir / "predictions_lora.csv", index=False, encoding="utf-8-sig"
-        )
+        lora_predictions.to_csv(run_dir / "predictions_lora.csv", index=False, encoding="utf-8-sig")
         lora_metrics = _evaluation_metrics(lora_predictions, terms)
 
         corrected_predictions = apply_term_correction(

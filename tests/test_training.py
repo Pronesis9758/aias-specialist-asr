@@ -48,9 +48,7 @@ def test_whisper_features_request_and_preserve_attention_mask() -> None:
     processor = SimpleNamespace(feature_extractor=FeatureExtractor())
     result = _extract_input_features(processor, [0.1, 0.2], 16_000)
 
-    assert calls == [
-        ([0.1, 0.2], {"sampling_rate": 16_000, "return_attention_mask": True})
-    ]
+    assert calls == [([0.1, 0.2], {"sampling_rate": 16_000, "return_attention_mask": True})]
     assert result == {"input_features": [1.0, 2.0], "attention_mask": [1, 0]}
 
 

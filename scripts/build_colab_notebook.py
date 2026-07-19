@@ -77,26 +77,26 @@ def build() -> Path:
             "    if not os.path.exists(PROJECT_DIR):\n"
             "        subprocess.run(\n"
             '            ["git", "clone", "--branch", GITHUB_BRANCH, "--single-branch",\n'
-            '             GITHUB_REPO_URL, PROJECT_DIR],\n'
+            "             GITHUB_REPO_URL, PROJECT_DIR],\n"
             "            env=clone_env,\n"
             "            check=True,\n"
             "        )\n"
             "    else:\n"
             "        subprocess.run(\n"
             '            ["git", "-C", PROJECT_DIR, "fetch", "origin", GITHUB_BRANCH],\n'
-            '            env=clone_env,\n'
+            "            env=clone_env,\n"
             "            check=True,\n"
             "        )\n"
             "        subprocess.run(\n"
             '            ["git", "-C", PROJECT_DIR, "checkout", GITHUB_BRANCH],\n'
-            '            env=clone_env,\n'
+            "            env=clone_env,\n"
             "            check=True,\n"
             "        )\n"
             "        subprocess.run(\n"
-            '            [\n'
+            "            [\n"
             '                "git", "-C", PROJECT_DIR, "merge", "--ff-only",\n'
             '                f"origin/{GITHUB_BRANCH}",\n'
-            '            ],\n'
+            "            ],\n"
             "            env=clone_env,\n"
             "            check=True,\n"
             "        )\n"
@@ -115,10 +115,10 @@ def build() -> Path:
             "%pip uninstall -y torchao\n"
             '%pip install -q -e ".[train]" "transformers>=4.46,<5" "peft>=0.14,<0.19"\n'
             "import sys, torch, transformers, peft\n"
-            "print({\"python\": sys.executable, \"torch\": torch.__version__,\n"
-            "       \"cuda\": torch.cuda.is_available(),\n"
-            "       \"transformers\": transformers.__version__,\n"
-            "       \"peft\": peft.__version__})"
+            'print({"python": sys.executable, "torch": torch.__version__,\n'
+            '       "cuda": torch.cuda.is_available(),\n'
+            '       "transformers": transformers.__version__,\n'
+            '       "peft": peft.__version__})'
         ),
         nbf.v4.new_markdown_cell(
             "### 4. 공개 한국어 음성 샘플 준비\n\n"
@@ -126,18 +126,18 @@ def build() -> Path:
             "스트리밍합니다. 두 번째 실행부터는 Drive의 완성된 manifest와 오디오를 재사용합니다."
         ),
         nbf.v4.new_code_cell(
-            "!{sys.executable} -m aias_specialist.cli prepare-hf-dataset --config \"{CONFIG}\""
+            '!{sys.executable} -m aias_specialist.cli prepare-hf-dataset --config "{CONFIG}"'
         ),
         nbf.v4.new_markdown_cell("### 5. 모델 버전 고정과 Baseline 실행"),
         nbf.v4.new_code_cell(
-            "!{sys.executable} -m aias_specialist.cli doctor --config \"{CONFIG}\"\n"
-            "!{sys.executable} -m aias_specialist.cli model-lock --config \"{CONFIG}\"\n"
-            "!{sys.executable} -m aias_specialist.cli download-model --config \"{CONFIG}\"\n"
-            "!{sys.executable} -m aias_specialist.cli run --config \"{CONFIG}\""
+            '!{sys.executable} -m aias_specialist.cli doctor --config "{CONFIG}"\n'
+            '!{sys.executable} -m aias_specialist.cli model-lock --config "{CONFIG}"\n'
+            '!{sys.executable} -m aias_specialist.cli download-model --config "{CONFIG}"\n'
+            '!{sys.executable} -m aias_specialist.cli run --config "{CONFIG}"'
         ),
         nbf.v4.new_markdown_cell("### 6. Whisper LoRA 학습"),
         nbf.v4.new_code_cell(
-            "!{sys.executable} -m aias_specialist.cli train-whisper --config \"{CONFIG}\""
+            '!{sys.executable} -m aias_specialist.cli train-whisper --config "{CONFIG}"'
         ),
         nbf.v4.new_markdown_cell("## Checks\n\nDrive에 결과와 checkpoint가 남았는지 확인합니다."),
         nbf.v4.new_code_cell(
