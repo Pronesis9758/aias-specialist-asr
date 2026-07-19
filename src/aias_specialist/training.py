@@ -343,15 +343,24 @@ def train_whisper_lora(settings: Settings) -> Path:
         argument_values["save_strategy"] = "steps"
         arguments = Seq2SeqTrainingArguments(**argument_values)
 
-        trainer = Seq2SeqTrainer(
-            model=model,
-            args=arguments,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            data_collator=collator,
-            compute_metrics=compute_metrics,
-            processing_class=processor,
+        trainer_values: dict[str, Any] = {
+            "model": model,
+            "args": arguments,
+            "train_dataset": train_dataset,
+            "eval_dataset": eval_dataset,
+            "data_collator": collator,
+            "compute_metrics": compute_metrics,
+        }
+        # ``processing_class`` replaced the deprecated ``tokenizer`` keyword in
+        # newer Transformers releases.  Keep the runner compatible with the
+        # older 4.x builds commonly preinstalled in Colab runtimes.
+        trainer_key = (
+            "processing_class"
+            if "processing_class" in inspect.signature(Seq2SeqTrainer).parameters
+            else "tokenizer"
         )
+        trainer_values[trainer_key] = processor
+        trainer = Seq2SeqTrainer(**trainer_values)
         resume = _checkpoint(output_dir, str(values.get("resume_from_checkpoint", "auto")))
         store.event(run_id, "training", "started", f"resume={resume or 'none'}")
         train_result = trainer.train(resume_from_checkpoint=resume)
