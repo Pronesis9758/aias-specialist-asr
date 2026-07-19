@@ -14,8 +14,8 @@ from .data import load_domain_terms, prepare_manifest
 from .environment import collect_environment
 from .evaluation import compare_metrics, evaluate_predictions, per_sample_metrics
 from .reporting import build_report, create_metrics_chart
-from .store import ExperimentStore
-from .utils import git_sha, new_run_id, sha256_file, utc_now, write_json
+from .store import ExperimentStore, register_run_artifacts
+from .utils import git_sha, new_run_id, utc_now, write_json
 
 
 @dataclass(frozen=True)
@@ -52,12 +52,6 @@ def _write_summary(path: Path, settings: Settings, run_id: str, metrics: dict[st
   final model choice
 """
     path.write_text(text, encoding="utf-8")
-
-
-def _register_artifacts(store: ExperimentStore, run_id: str, run_dir: Path) -> None:
-    for path in sorted(item for item in run_dir.rglob("*") if item.is_file()):
-        artifact_type = path.suffix.lstrip(".") or "file"
-        store.add_artifact(run_id, artifact_type, path, sha256_file(path))
 
 
 def run_pipeline(settings: Settings) -> RunResult:
@@ -169,7 +163,7 @@ def run_pipeline(settings: Settings) -> RunResult:
                 "Training is configured but must be run with the dedicated Colab training command.",
             )
 
-        _register_artifacts(store, run_id, run_dir)
+        register_run_artifacts(store, run_id, run_dir)
         store.finish_run(run_id, "completed", model_revision=revision)
         return RunResult(run_id=run_id, run_dir=run_dir, metrics=metrics, report_path=report_path)
     except Exception as exc:

@@ -10,12 +10,19 @@ from pathlib import Path
 from typing import Any
 
 PACKAGES = [
+    "accelerate",
+    "datasets",
+    "evaluate",
     "faster-whisper",
     "huggingface-hub",
     "jiwer",
+    "librosa",
     "pandas",
+    "peft",
     "python-docx",
     "pyyaml",
+    "torch",
+    "transformers",
 ]
 
 

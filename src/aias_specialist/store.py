@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from .utils import utc_now
+from .utils import sha256_file, utc_now
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -147,3 +147,10 @@ class ExperimentStore:
                 (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+
+def register_run_artifacts(store: ExperimentStore, run_id: str, run_dir: Path) -> None:
+    """Register every immutable file produced inside a run directory."""
+    for path in sorted(item for item in run_dir.rglob("*") if item.is_file()):
+        artifact_type = path.suffix.lstrip(".") or "file"
+        store.add_artifact(run_id, artifact_type, path, sha256_file(path))
