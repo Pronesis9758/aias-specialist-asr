@@ -1,0 +1,41 @@
+project:
+  name: AI Specialist 제조 음성 ASR
+  owner: Pronesis9758
+  seed: 42
+
+paths:
+  manifest: data/private/manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/runs
+  database: /content/drive/MyDrive/AI_Specialist_ASR_Project/backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+model:
+  backend: faster_whisper
+  repo_id: Systran/faster-whisper-small
+  revision: main
+  local_dir: /content/models/faster-whisper-small
+  language: ko
+  device: cuda
+  compute_type: float16
+  beam_size: 5
+
+correction:
+  enabled: true
+  case_sensitive: false
+
+training:
+  enabled: true
+  repo_id: openai/whisper-small
+  revision: main
+  method: lora
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints
+  gradient_checkpointing: false
+  max_steps: 500
+  save_steps: 50
+  eval_steps: 50
+  resume_from_checkpoint: auto
+
+report:
+  title: 제조 음성 ASR Colab 실험 평가 보고서
+  include_charts: true

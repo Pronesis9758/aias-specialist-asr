@@ -1,0 +1,63 @@
+project:
+  name: AI Specialist 제조 음성 ASR
+  owner: Pronesis9758
+  seed: 42
+
+paths:
+  manifest: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/public/zeroth_korean/manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/runs
+  database: /content/drive/MyDrive/AI_Specialist_ASR_Project/backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+dataset:
+  repo_id: kresnik/zeroth_korean
+  revision: 1fe937899f828af822293d05e086200946088bdf
+  subset: default
+  train_split: train
+  test_split: test
+  audio_column: audio
+  text_column: text
+  id_column: id
+  license: CC-BY-4.0
+  train_samples: 40
+  validation_samples: 8
+  test_samples: 16
+  shuffle_buffer_size: 1000
+
+model:
+  backend: faster_whisper
+  repo_id: Systran/faster-whisper-tiny
+  revision: main
+  local_dir: /content/models/faster-whisper-tiny
+  language: ko
+  device: cuda
+  compute_type: float16
+  beam_size: 5
+
+correction:
+  enabled: true
+  case_sensitive: false
+
+training:
+  enabled: true
+  repo_id: openai/whisper-tiny
+  revision: main
+  method: lora
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/whisper-tiny-lora
+  train_batch_size: 4
+  eval_batch_size: 4
+  gradient_accumulation_steps: 2
+  gradient_checkpointing: false
+  learning_rate: 0.0001
+  max_steps: 30
+  warmup_steps: 5
+  save_steps: 10
+  eval_steps: 10
+  logging_steps: 5
+  save_total_limit: 2
+  resume_from_checkpoint: auto
+
+report:
+  title: 공개 한국어 음성 ASR Colab 데모 평가 보고서
+  include_charts: true

@@ -1,0 +1,48 @@
+project:
+  name: AI Specialist 공개 음성 로컬 점검
+  owner: Pronesis9758
+  seed: 42
+
+paths:
+  manifest: data/private/zeroth_korean_smoke/manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: artifacts/runs
+  database: backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+dataset:
+  repo_id: kresnik/zeroth_korean
+  revision: 1fe937899f828af822293d05e086200946088bdf
+  subset: default
+  train_split: train
+  test_split: test
+  audio_column: audio
+  text_column: text
+  id_column: id
+  license: CC-BY-4.0
+  train_samples: 2
+  validation_samples: 1
+  test_samples: 1
+  shuffle_buffer_size: 32
+
+model:
+  backend: faster_whisper
+  repo_id: Systran/faster-whisper-tiny
+  revision: main
+  local_dir: models/faster-whisper-tiny
+  language: ko
+  device: cpu
+  compute_type: int8
+  beam_size: 5
+
+correction:
+  enabled: true
+  case_sensitive: false
+
+training:
+  enabled: false
+  reason: 로컬 CPU에서는 데이터 준비와 Baseline만 점검
+
+report:
+  title: 공개 한국어 음성 로컬 점검 보고서
+  include_charts: true

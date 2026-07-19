@@ -1,0 +1,33 @@
+project:
+  name: AI Specialist 제조 음성 ASR
+  owner: Pronesis9758
+  seed: 42
+
+paths:
+  manifest: data/sample/model_smoke_manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: artifacts/runs
+  database: backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+model:
+  backend: faster_whisper
+  repo_id: Systran/faster-whisper-tiny
+  revision: main
+  local_dir: models/faster-whisper-tiny
+  language: ko
+  device: cpu
+  compute_type: int8
+  beam_size: 3
+
+correction:
+  enabled: true
+  case_sensitive: false
+
+training:
+  enabled: false
+  reason: 실제 검수 음성과 GPU 실행 환경이 준비된 후 활성화
+
+report:
+  title: 제조 음성 ASR 실제 모델 Smoke 평가 보고서
+  include_charts: true

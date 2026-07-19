@@ -1,0 +1,2 @@
+sample_id,audio_path,reference_text,split,fixture_prediction,source,consent_status
+silence-001,audio/silence-001.wav,무음,test,,generated-silence,synthetic
