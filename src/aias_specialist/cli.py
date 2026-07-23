@@ -7,6 +7,13 @@ import typer
 
 from .config import load_settings
 from .environment import doctor as doctor_check
+from .experiments import (
+    lock_model_matrix,
+    run_final_evaluation,
+    run_model_benchmark,
+    run_quantization_sweep,
+    select_experiment_member,
+)
 from .hf_data import prepare_hf_dataset
 from .models import download_baseline_model, resolve_model_lock
 from .pipeline import run_pipeline
@@ -96,6 +103,94 @@ def history(
     settings = load_settings(config)
     records = ExperimentStore(settings.paths.database).history(limit=limit)
     typer.echo(json.dumps(records, ensure_ascii=False, indent=2))
+
+
+@app.command("model-matrix-lock")
+def model_matrix_lock(
+    matrix: Path = typer.Option(
+        Path("configs/benchmarks/whisper_models_colab.yaml"),
+        exists=True,
+        dir_okay=False,
+    ),
+) -> None:
+    """Pin every enabled model in a benchmark matrix to an immutable Hub commit."""
+    payload = lock_model_matrix(matrix)
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+@app.command("benchmark-models")
+def benchmark_models(
+    matrix: Path = typer.Option(
+        Path("configs/benchmarks/whisper_models_colab.yaml"),
+        exists=True,
+        dir_okay=False,
+    ),
+) -> None:
+    """Compare multiple Whisper models on one fixed validation split."""
+    result = run_model_benchmark(matrix)
+    typer.echo(f"Benchmark {result.status}: {result.group_id}")
+    typer.echo(f"Comparison: {result.comparison_path}")
+    typer.echo(f"Report: {result.report_path}")
+
+
+@app.command("select-model")
+def select_model(
+    benchmark_dir: Path = typer.Option(..., exists=True, file_okay=False),
+    model_id: str = typer.Option(..., help="Completed benchmark model ID."),
+    reviewer: str = typer.Option(..., help="Human reviewer making the trade-off decision."),
+    reason: str = typer.Option(..., help="Accuracy, speed, memory, and governance rationale."),
+) -> None:
+    """Record the human-selected model and its benchmark evidence."""
+    path = select_experiment_member(
+        benchmark_dir,
+        model_id,
+        reviewer=reviewer,
+        reason=reason,
+    )
+    typer.echo(f"Selection: {path}")
+
+
+@app.command("quantization-sweep")
+def quantization_sweep(
+    spec: Path = typer.Option(
+        Path("configs/quantization/whisper_quantization_colab.yaml"),
+        exists=True,
+        dir_okay=False,
+    ),
+    selection: Path = typer.Option(..., exists=True, dir_okay=False),
+) -> None:
+    """Evaluate storage and runtime quantization variants for a selected model."""
+    result = run_quantization_sweep(spec, selection)
+    typer.echo(f"Quantization sweep {result.status}: {result.group_id}")
+    typer.echo(f"Comparison: {result.comparison_path}")
+    typer.echo(f"Report: {result.report_path}")
+
+
+@app.command("select-quantization")
+def select_quantization(
+    quantization_dir: Path = typer.Option(..., exists=True, file_okay=False),
+    variant_id: str = typer.Option(..., help="Completed quantization variant ID."),
+    reviewer: str = typer.Option(..., help="Human reviewer making the deployment decision."),
+    reason: str = typer.Option(..., help="Accuracy-loss and efficiency trade-off rationale."),
+) -> None:
+    """Record the human-selected quantization variant."""
+    path = select_experiment_member(
+        quantization_dir,
+        variant_id,
+        reviewer=reviewer,
+        reason=reason,
+    )
+    typer.echo(f"Selection: {path}")
+
+
+@app.command("finalize-evaluation")
+def finalize_evaluation(
+    selection: Path = typer.Option(..., exists=True, dir_okay=False),
+    config: Path = typer.Option(..., exists=True, dir_okay=False),
+) -> None:
+    """Run one final held-out test evaluation after model and precision selection."""
+    result = run_final_evaluation(selection, config)
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,5 @@
+sample_id,audio_path,reference_text,split,fixture_prediction,source,consent_status
+benchmark-001,fixture://benchmark-001,프레스 3호기 베어링 온도가 기준치를 초과했습니다.,validation,프레스 삼오기 베어링 온도가 기준치를 초과했습니다.,synthetic,approved
+benchmark-002,fixture://benchmark-002,컨베이어 모터 전류를 확인해 주세요.,validation,콘베이어 모터 전류를 확인해 주세요.,synthetic,approved
+benchmark-003,fixture://benchmark-003,비전 검사기 카메라를 재보정합니다.,validation,비젼 검사기 카메라를 재보정합니다.,synthetic,approved
+benchmark-004,fixture://benchmark-004,설비 이상 이력을 조회해 주세요.,test,설비 이상 이력을 조회해 주세요.,synthetic,approved

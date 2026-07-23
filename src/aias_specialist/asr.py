@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import subprocess
 import time
 from pathlib import Path
 
 import pandas as pd
+import psutil
 
 from .config import Settings
 from .models import download_baseline_model
@@ -27,6 +29,33 @@ def _runtime_device(settings: Settings) -> tuple[str, str]:
     return device, compute_type
 
 
+def _directory_size_bytes(path: Path) -> int:
+    return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+
+
+def _gpu_memory_used_mb() -> float:
+    try:
+        completed = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-compute-apps=used_memory",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        values = [
+            float(line.strip())
+            for line in completed.stdout.splitlines()
+            if line.strip().replace(".", "", 1).isdigit()
+        ]
+        return max(values, default=0.0)
+    except (FileNotFoundError, subprocess.SubprocessError, ValueError):
+        return 0.0
+
+
 def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame, str]:
     if settings.model.backend == "fixture":
         output = frame.copy()
@@ -37,14 +66,27 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
         output["backend"] = "fixture"
         output["model_repo"] = settings.model.repo_id
         output["model_revision"] = "fixture"
+        output["runtime_device"] = settings.model.device
+        output["compute_type"] = settings.model.compute_type
+        output["storage_quantization"] = settings.model.conversion_quantization or "fixture"
+        output["model_preparation_seconds"] = 0.0
+        output["model_size_bytes"] = 0
+        output["process_rss_mb"] = 0.0
+        output["gpu_memory_mb"] = 0.0
         return output, "fixture"
 
+    preparation_started = time.perf_counter()
     model_path, revision = download_baseline_model(settings)
+    preparation_seconds = time.perf_counter() - preparation_started
+    model_size_bytes = _directory_size_bytes(model_path)
     device, compute_type = _runtime_device(settings)
 
     from faster_whisper import WhisperModel
 
     model = WhisperModel(str(model_path), device=device, compute_type=compute_type)
+    process = psutil.Process()
+    peak_rss_mb = process.memory_info().rss / (1024 * 1024)
+    peak_gpu_memory_mb = _gpu_memory_used_mb()
     rows: list[dict[str, object]] = []
     for record in frame.to_dict(orient="records"):
         audio_path = Path(str(record["audio_path"]))
@@ -58,6 +100,8 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
         prediction = " ".join(segment.text.strip() for segment in segments).strip()
         latency = time.perf_counter() - started
         duration = float(getattr(info, "duration", 0.0) or 0.0)
+        peak_rss_mb = max(peak_rss_mb, process.memory_info().rss / (1024 * 1024))
+        peak_gpu_memory_mb = max(peak_gpu_memory_mb, _gpu_memory_used_mb())
         rows.append(
             {
                 **record,
@@ -68,6 +112,15 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
                 "backend": "faster_whisper",
                 "model_repo": settings.model.repo_id,
                 "model_revision": revision,
+                "runtime_device": device,
+                "compute_type": compute_type,
+                "storage_quantization": (
+                    settings.model.conversion_quantization or "source-default"
+                ),
+                "model_preparation_seconds": preparation_seconds,
+                "model_size_bytes": model_size_bytes,
+                "process_rss_mb": peak_rss_mb,
+                "gpu_memory_mb": peak_gpu_memory_mb,
             }
         )
     return pd.DataFrame(rows), revision

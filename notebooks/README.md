@@ -1,12 +1,19 @@
 # Colab notebook
 
-`colab_runner.ipynb`는 `scripts/build_colab_notebook.py`로 생성합니다.
+- `colab_runner.ipynb`: 공개 데이터 Baseline과 Whisper LoRA 데모
+- `colab_model_benchmark_quantization.ipynb`: Whisper 모델 크기 비교, 모델 선택,
+  FP16·INT8-FP16 양자화 비교, 양자화 선택, 고정 Test 최종평가
+
+각 노트북은 대응하는 `scripts/build_*_notebook.py`로 생성합니다. 두 노트북 모두
+카메라·마이크·패스키 권한을 사용하지 않습니다.
 
 로컬에서는 Colab 전용 Drive/GPU 셀을 실행하지 않습니다. 구조 검증은 다음과 같이 수행합니다.
 
 ```powershell
 uv run python scripts/build_colab_notebook.py
+uv run python scripts/build_benchmark_notebook.py
 uv run python -m json.tool notebooks/colab_runner.ipynb > $null
+uv run python -m json.tool notebooks/colab_model_benchmark_quantization.ipynb > $null
 ```
 
 실제 실행 검증은 GPU 런타임의 Colab에서 위에서부터 순서대로 수행해야 합니다.

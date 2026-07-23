@@ -42,6 +42,7 @@ def _write_summary(path: Path, settings: Settings, run_id: str, metrics: dict[st
 - Project: {settings.project.name}
 - Backend: {settings.model.backend}
 - Model: {settings.model.repo_id}
+- Evaluation split: {settings.evaluation.split}
 - Samples: {baseline["sample_count"]}
 - Baseline WER: {baseline["wer"]:.4f}
 - Corrected WER: {corrected["wer"]:.4f}
@@ -94,14 +95,18 @@ def run_pipeline(settings: Settings) -> RunResult:
         terms.to_csv(run_dir / "domain_terms.snapshot.csv", index=False, encoding="utf-8-sig")
         store.event(run_id, "prepare", "completed", f"samples={len(prepared)}")
 
-        evaluation_frame = prepared.loc[prepared["split"].str.lower() == "test"].copy()
+        evaluation_frame = prepared.loc[
+            prepared["split"].str.lower() == settings.evaluation.split
+        ].copy()
         if evaluation_frame.empty:
-            raise ValueError("Pipeline evaluation requires at least one test sample")
+            raise ValueError(
+                f"Pipeline evaluation requires at least one {settings.evaluation.split} sample"
+            )
         store.event(
             run_id,
             "evaluation_split",
             "completed",
-            f"test_samples={len(evaluation_frame)}",
+            f"split={settings.evaluation.split}; samples={len(evaluation_frame)}",
         )
 
         store.event(run_id, "baseline", "started")
@@ -112,6 +117,11 @@ def run_pipeline(settings: Settings) -> RunResult:
         )
         baseline_metrics = evaluate_predictions(baseline_predictions, terms)
         store.event(run_id, "baseline", "completed", f"revision={revision}")
+        if settings.paths.model_lock.exists():
+            (run_dir / "model-lock.snapshot.yaml").write_text(
+                settings.paths.model_lock.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
 
         store.event(run_id, "correction", "started")
         corrected_predictions = apply_term_correction(
@@ -133,6 +143,20 @@ def run_pipeline(settings: Settings) -> RunResult:
             "improvement": compare_metrics(baseline_metrics, corrected_metrics),
         }
         write_json(run_dir / "metrics.json", metrics)
+        write_json(
+            run_dir / "resource_metrics.json",
+            {
+                key: baseline_metrics[key]
+                for key in [
+                    "model_preparation_seconds",
+                    "model_size_bytes",
+                    "peak_process_memory_mb",
+                    "peak_gpu_memory_mb",
+                    "evaluation_runtime_seconds",
+                    "aggregate_real_time_factor",
+                ]
+            },
+        )
         store.add_metrics(run_id, "baseline", baseline_metrics)
         store.add_metrics(run_id, "corrected", corrected_metrics)
         store.add_metrics(run_id, "improvement", metrics["improvement"])

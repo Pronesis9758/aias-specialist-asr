@@ -28,12 +28,24 @@ def _term_recall(frame: pd.DataFrame, terms: pd.DataFrame) -> tuple[float, int, 
     return recall, detected, expected
 
 
+def _numeric_column(frame: pd.DataFrame, name: str, default: float = 0.0) -> pd.Series:
+    values = frame[name] if name in frame.columns else pd.Series(default, index=frame.index)
+    return pd.to_numeric(values, errors="coerce").fillna(default)
+
+
 def evaluate_predictions(frame: pd.DataFrame, terms: pd.DataFrame) -> dict[str, Any]:
     references = [normalize_text(item) for item in frame["reference_text"].astype(str)]
     predictions = [normalize_text(item) for item in frame["prediction_text"].astype(str)]
     term_recall, detected_terms, expected_terms = _term_recall(frame, terms)
-    latencies = pd.to_numeric(frame.get("latency_seconds", 0.0), errors="coerce").fillna(0.0)
-    rtfs = pd.to_numeric(frame.get("real_time_factor", 0.0), errors="coerce").fillna(0.0)
+    latencies = _numeric_column(frame, "latency_seconds")
+    rtfs = _numeric_column(frame, "real_time_factor")
+    durations = _numeric_column(frame, "audio_duration_seconds")
+    model_sizes = _numeric_column(frame, "model_size_bytes")
+    process_memory = _numeric_column(frame, "process_rss_mb")
+    gpu_memory = _numeric_column(frame, "gpu_memory_mb")
+    preparation = _numeric_column(frame, "model_preparation_seconds")
+    total_duration = float(durations.sum())
+    total_latency = float(latencies.sum())
 
     return {
         "sample_count": int(len(frame)),
@@ -46,6 +58,15 @@ def evaluate_predictions(frame: pd.DataFrame, terms: pd.DataFrame) -> dict[str, 
         "mean_latency_seconds": float(latencies.mean()),
         "p95_latency_seconds": float(latencies.quantile(0.95)),
         "mean_real_time_factor": float(rtfs.mean()),
+        "aggregate_real_time_factor": (
+            total_latency / total_duration if total_duration > 0 else 0.0
+        ),
+        "audio_duration_seconds": total_duration,
+        "evaluation_runtime_seconds": total_latency,
+        "model_preparation_seconds": float(preparation.max()),
+        "model_size_bytes": int(model_sizes.max()),
+        "peak_process_memory_mb": float(process_memory.max()),
+        "peak_gpu_memory_mb": float(gpu_memory.max()),
     }
 
 

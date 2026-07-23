@@ -10,11 +10,41 @@ WER/CER/용어 정확도 평가, 실행 이력 누적, Word 보고서 생성을 
 - 샘플 fixture 또는 Hugging Face `faster-whisper` 모델 기반 ASR 추론
 - 제조 용어 alias 보정
 - WER, CER, Domain Term Recall, Latency 측정
+- Whisper Tiny/Base/Small/Medium/Large-v3/Turbo Validation 비교
+- 선택 모델의 FP16·INT8-FP16 양자화 및 자원 사용량 비교
+- 사람의 모델·양자화 선택 기록 후 고정 Test 최종평가
 - 실행별 설정/환경/예측/지표/보고서 저장
 - SQLite 실험 레지스트리에 백데이터 누적
 - 로컬과 Google Colab에서 동일한 설정 파일 사용
 
 Fine-tuning과 실제 현장 데이터 사용은 데이터·보안·GPU 확인 후 활성화합니다.
+
+## 모델·양자화 비교 Colab 실행
+
+`notebooks/colab_model_benchmark_quantization.ipynb`는 다음 순서로 실행됩니다.
+
+1. 공개 한국어 데이터의 Validation/Test 분리 확인
+2. 모든 Whisper 후보의 Hugging Face revision을 commit SHA로 고정
+3. 동일 Validation 데이터에서 FP16 모델 크기 비교
+4. 모델 담당자와 선택 이유 기록
+5. 선택 모델의 FP16·INT8-FP16 비교
+6. 양자화 담당자와 선택 이유 기록
+7. 선택된 모델·양자화 조합의 고정 Test 최종평가
+
+모델·양자화 후보는 각각 독립 `run_id`를 가지며, 비교 CSV·그래프·Word 보고서와
+SQLite 실험 그룹 관계가 Google Drive에 보존됩니다. Colab 연결이 끊긴 뒤 같은 실험 ID로
+다시 실행하면 완료된 후보는 건너뜁니다. 실험 설정이나 데이터가 바뀌면 YAML의 `id`를 새
+버전으로 변경해야 합니다.
+
+로컬 fixture로 오케스트레이션만 확인하려면:
+
+```powershell
+& "$env:USERPROFILE\.local\bin\uv.exe" run aias benchmark-models `
+  --matrix configs/benchmarks/local_fixture.yaml
+```
+
+실제 Colab 모델 비교 설정은 `configs/benchmarks/whisper_models_colab.yaml`, 양자화 설정은
+`configs/quantization/whisper_quantization_colab.yaml`에 있습니다.
 
 ## 음성 파일 없이 Colab 데모 실행
 
@@ -90,6 +120,12 @@ aias model-lock --config ...        Hugging Face 모델 revision을 commit SHA�
 aias download-model --config ...    고정된 모델 파일 다운로드
 aias prepare-hf-dataset --config ... 공개 음성 샘플과 manifest 준비
 aias run --config ...               전체 파이프라인 실행
+aias model-matrix-lock --matrix ... 모델 행렬 전체 revision 고정
+aias benchmark-models --matrix ...  Validation 모델 비교
+aias select-model ...               사람의 모델 선택과 이유 기록
+aias quantization-sweep ...         선택 모델의 양자화 비교
+aias select-quantization ...        사람의 양자화 선택과 이유 기록
+aias finalize-evaluation ...        고정 Test 최종평가
 aias history                        누적 실행 이력 조회
 ```
 

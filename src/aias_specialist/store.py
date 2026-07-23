@@ -46,6 +46,42 @@ CREATE TABLE IF NOT EXISTS events (
     message TEXT,
     FOREIGN KEY (run_id) REFERENCES runs(run_id)
 );
+CREATE TABLE IF NOT EXISTS experiment_groups (
+    group_id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    status TEXT NOT NULL,
+    config_path TEXT NOT NULL,
+    output_dir TEXT NOT NULL,
+    error TEXT
+);
+CREATE TABLE IF NOT EXISTS experiment_group_members (
+    group_id TEXT NOT NULL,
+    member_id TEXT NOT NULL,
+    run_id TEXT,
+    model_id TEXT NOT NULL,
+    variant_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    config_path TEXT NOT NULL,
+    error TEXT,
+    PRIMARY KEY (group_id, member_id),
+    FOREIGN KEY (group_id) REFERENCES experiment_groups(group_id),
+    FOREIGN KEY (run_id) REFERENCES runs(run_id)
+);
+CREATE TABLE IF NOT EXISTS experiment_selections (
+    selection_id TEXT PRIMARY KEY,
+    group_id TEXT NOT NULL,
+    member_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    selected_at TEXT NOT NULL,
+    reviewer TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    selection_path TEXT NOT NULL,
+    FOREIGN KEY (group_id) REFERENCES experiment_groups(group_id),
+    FOREIGN KEY (run_id) REFERENCES runs(run_id)
+);
 """
 
 
@@ -147,6 +183,135 @@ class ExperimentStore:
                 (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def start_group(
+        self,
+        *,
+        group_id: str,
+        kind: str,
+        name: str,
+        config_path: Path,
+        output_dir: Path,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO experiment_groups (
+                    group_id, kind, name, started_at, status, config_path, output_dir
+                ) VALUES (?, ?, ?, ?, 'running', ?, ?)
+                """,
+                (
+                    group_id,
+                    kind,
+                    name,
+                    utc_now().isoformat(),
+                    str(config_path),
+                    str(output_dir),
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE experiment_groups
+                SET status = 'running', completed_at = NULL, error = NULL
+                WHERE group_id = ? AND status != 'completed'
+                """,
+                (group_id,),
+            )
+
+    def finish_group(self, group_id: str, status: str, error: str | None = None) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE experiment_groups
+                SET completed_at = ?, status = ?, error = ?
+                WHERE group_id = ?
+                """,
+                (utc_now().isoformat(), status, error, group_id),
+            )
+
+    def upsert_group_member(
+        self,
+        *,
+        group_id: str,
+        member_id: str,
+        model_id: str,
+        variant_id: str,
+        status: str,
+        config_path: Path,
+        run_id: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO experiment_group_members (
+                    group_id, member_id, run_id, model_id, variant_id,
+                    status, config_path, error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(group_id, member_id) DO UPDATE SET
+                    run_id = excluded.run_id,
+                    model_id = excluded.model_id,
+                    variant_id = excluded.variant_id,
+                    status = excluded.status,
+                    config_path = excluded.config_path,
+                    error = excluded.error
+                """,
+                (
+                    group_id,
+                    member_id,
+                    run_id,
+                    model_id,
+                    variant_id,
+                    status,
+                    str(config_path),
+                    error,
+                ),
+            )
+
+    def group_members(self, group_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT group_id, member_id, run_id, model_id, variant_id,
+                       status, config_path, error
+                FROM experiment_group_members
+                WHERE group_id = ?
+                ORDER BY member_id
+                """,
+                (group_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_selection(
+        self,
+        *,
+        selection_id: str,
+        group_id: str,
+        member_id: str,
+        run_id: str,
+        reviewer: str,
+        reason: str,
+        selection_path: Path,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO experiment_selections (
+                    selection_id, group_id, member_id, run_id, selected_at,
+                    reviewer, reason, selection_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    selection_id,
+                    group_id,
+                    member_id,
+                    run_id,
+                    utc_now().isoformat(),
+                    reviewer,
+                    reason,
+                    str(selection_path),
+                ),
+            )
 
 
 def register_run_artifacts(store: ExperimentStore, run_id: str, run_dir: Path) -> None:
