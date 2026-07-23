@@ -4,6 +4,10 @@
 - `colab_model_benchmark_quantization.ipynb`: Whisper 모델 크기 비교, 모델 선택,
   FP16·INT8-FP16 양자화 비교, 양자화 선택, 고정 Test 최종평가
 
+모델 비교 노트북은 변환된 CTranslate2 모델을 Google Drive에 캐시합니다. 변환 전
+Hugging Face 원본 모델도 런타임 간 재사용하려면 첫 설정 셀의
+`PERSIST_HF_SOURCE_CACHE=True`를 사용합니다.
+
 각 노트북은 대응하는 `scripts/build_*_notebook.py`로 생성합니다. 두 노트북 모두
 카메라·마이크·패스키 권한을 사용하지 않습니다.
 

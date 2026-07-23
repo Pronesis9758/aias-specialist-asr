@@ -80,6 +80,11 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
     preparation_seconds = time.perf_counter() - preparation_started
     model_size_bytes = _directory_size_bytes(model_path)
     device, compute_type = _runtime_device(settings)
+    print(
+        f"[inference] loading model device={device} compute_type={compute_type} "
+        f"size_mb={model_size_bytes / (1024 * 1024):.1f}",
+        flush=True,
+    )
 
     from faster_whisper import WhisperModel
 
@@ -88,7 +93,9 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
     peak_rss_mb = process.memory_info().rss / (1024 * 1024)
     peak_gpu_memory_mb = _gpu_memory_used_mb()
     rows: list[dict[str, object]] = []
-    for record in frame.to_dict(orient="records"):
+    records = frame.to_dict(orient="records")
+    for index, record in enumerate(records, start=1):
+        print(f"[inference] sample {index}/{len(records)}", flush=True)
         audio_path = Path(str(record["audio_path"]))
         started = time.perf_counter()
         segments, info = model.transcribe(
@@ -122,5 +129,11 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
                 "process_rss_mb": peak_rss_mb,
                 "gpu_memory_mb": peak_gpu_memory_mb,
             }
+        )
+        print(
+            f"[inference] sample {index}/{len(records)} completed "
+            f"latency={latency:.2f}s rtf="
+            f"{latency / duration if duration > 0 else 0.0:.3f}",
+            flush=True,
         )
     return pd.DataFrame(rows), revision

@@ -63,6 +63,10 @@ def run_pipeline(settings: Settings) -> RunResult:
     reports_dir.mkdir(parents=True, exist_ok=True)
     store = ExperimentStore(settings.paths.database)
     revision: str | None = None
+    print(
+        f"[pipeline] run={run_id} model={settings.model.repo_id} split={settings.evaluation.split}",
+        flush=True,
+    )
 
     store.start_run(
         {
@@ -86,6 +90,7 @@ def run_pipeline(settings: Settings) -> RunResult:
         store.event(run_id, "snapshot", "completed")
 
         store.event(run_id, "prepare", "started")
+        print("[pipeline] preparing manifest", flush=True)
         prepared = prepare_manifest(
             settings.paths.manifest,
             run_dir / "prepared_manifest.csv",
@@ -110,6 +115,7 @@ def run_pipeline(settings: Settings) -> RunResult:
         )
 
         store.event(run_id, "baseline", "started")
+        print("[pipeline] running baseline inference", flush=True)
         baseline_predictions, revision = run_inference(evaluation_frame, settings)
         baseline_predictions = per_sample_metrics(baseline_predictions)
         baseline_predictions.to_csv(
@@ -124,6 +130,7 @@ def run_pipeline(settings: Settings) -> RunResult:
             )
 
         store.event(run_id, "correction", "started")
+        print("[pipeline] applying domain-term correction", flush=True)
         corrected_predictions = apply_term_correction(
             baseline_predictions,
             terms,
@@ -162,6 +169,7 @@ def run_pipeline(settings: Settings) -> RunResult:
         store.add_metrics(run_id, "improvement", metrics["improvement"])
 
         store.event(run_id, "report", "started")
+        print("[pipeline] generating report", flush=True)
         chart_path = None
         if settings.report.include_charts:
             chart_path = create_metrics_chart(metrics, reports_dir / "metrics_comparison.png")
@@ -189,10 +197,12 @@ def run_pipeline(settings: Settings) -> RunResult:
 
         register_run_artifacts(store, run_id, run_dir)
         store.finish_run(run_id, "completed", model_revision=revision)
+        print(f"[pipeline] completed run={run_id} report={report_path}", flush=True)
         return RunResult(run_id=run_id, run_dir=run_dir, metrics=metrics, report_path=report_path)
     except Exception as exc:
         error_path = run_dir / "error.txt"
         error_path.write_text(traceback.format_exc(), encoding="utf-8")
         store.event(run_id, "pipeline", "failed", str(exc))
         store.finish_run(run_id, "failed", model_revision=revision, error=str(exc))
+        print(f"[pipeline] failed run={run_id}: {exc}", flush=True)
         raise

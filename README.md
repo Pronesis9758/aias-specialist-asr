@@ -36,6 +36,12 @@ SQLite 실험 그룹 관계가 Google Drive에 보존됩니다. Colab 연결이 
 다시 실행하면 완료된 후보는 건너뜁니다. 실험 설정이나 데이터가 바뀌면 YAML의 `id`를 새
 버전으로 변경해야 합니다.
 
+모델 다운로드·변환과 샘플별 추론 진행률은 셀 출력에 실시간 표시됩니다. 변환된
+CTranslate2 모델은 Drive의 `models/ct2/`에 계속 보존되어 다음 Colab 런타임에서
+재사용됩니다. 변환 전 Hugging Face 원본 모델까지 Drive에 보존하려면 노트북의
+`PERSIST_HF_SOURCE_CACHE=True`를 사용합니다. 이 옵션은 약 15GB 이상의 추가 공간을
+사용할 수 있으므로 기본값은 `False`입니다.
+
 로컬 fixture로 오케스트레이션만 확인하려면:
 
 ```powershell

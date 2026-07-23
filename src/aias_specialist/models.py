@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,10 +34,14 @@ def resolve_model_revisions(
             "roles": ["baseline"],
         }
 
-    for request in requests:
+    for index, request in enumerate(requests, start=1):
         repo_id = str(request["repo_id"])
         requested_revision = str(request.get("revision", "main"))
         roles = sorted({str(role) for role in request.get("roles", ["baseline"])})
+        print(
+            f"[model-lock] {index}/{len(requests)} {repo_id}@{requested_revision}",
+            flush=True,
+        )
         info = api.model_info(repo_id, revision=requested_revision)
         previous = locked_models.get(repo_id, {})
         previous_roles = previous.get("roles", []) if isinstance(previous, dict) else []
@@ -112,10 +117,15 @@ def download_baseline_model(settings: Settings) -> tuple[Path, str]:
         local_dir / "tokenizer.json",
     ]
     if all(path.exists() and path.stat().st_size > 0 for path in required_files):
+        print(f"[model-cache] reuse {local_dir}", flush=True)
         return local_dir, revision
     if settings.model.format == "transformers":
         return _convert_transformers_model(settings, revision), revision
     local_dir.mkdir(parents=True, exist_ok=True)
+    print(
+        f"[model-download] {settings.model.repo_id}@{revision} -> {local_dir}",
+        flush=True,
+    )
     snapshot_download(
         repo_id=settings.model.repo_id,
         revision=revision,
@@ -133,6 +143,7 @@ def _convert_transformers_model(settings: Settings, revision: str) -> Path:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         preserved = local_dir.with_name(f"{local_dir.name}.incomplete-{timestamp}")
         local_dir.replace(preserved)
+        print(f"[model-cache] preserved incomplete cache: {preserved}", flush=True)
 
     partial_dir = local_dir.with_name(f".{local_dir.name}.partial-{uuid4().hex[:8]}")
     try:
@@ -143,11 +154,23 @@ def _convert_transformers_model(settings: Settings, revision: str) -> Path:
                 "Transformers model conversion requires the train dependency extra. "
                 "Run 'uv sync --extra train' locally or install '.[train]' in Colab."
             ) from exc
+        source_cache = os.environ.get("HF_HUB_CACHE") or os.environ.get(
+            "HF_HOME", "Hugging Face default"
+        )
+        print(
+            f"[model-source] loading {settings.model.repo_id}@{revision} cache={source_cache}",
+            flush=True,
+        )
         converter = TransformersConverter(
             settings.model.repo_id,
             revision=revision,
             copy_files=["tokenizer.json", "preprocessor_config.json"],
             low_cpu_mem_usage=True,
+        )
+        print(
+            f"[model-convert] source ready; start {settings.model.repo_id}@{revision} "
+            f"quantization={quantization}",
+            flush=True,
         )
         converter.convert(
             str(partial_dir),
@@ -162,6 +185,7 @@ def _convert_transformers_model(settings: Settings, revision: str) -> Path:
         if not all(path.exists() and path.stat().st_size > 0 for path in required):
             raise RuntimeError(f"Incomplete CTranslate2 conversion: {partial_dir}")
         partial_dir.replace(local_dir)
+        print(f"[model-convert] completed -> {local_dir}", flush=True)
     except Exception:
         if partial_dir.exists():
             timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

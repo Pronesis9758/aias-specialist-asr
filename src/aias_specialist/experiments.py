@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
+import queue
 import subprocess
 import sys
+import threading
+import time
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -166,23 +170,53 @@ def _execute_config(config_path: Path, result_path: Path, isolated_process: bool
 
     if result_path.exists():
         result_path.unlink()
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "aias_specialist.worker",
-            "--config",
-            str(config_path),
-            "--result",
-            str(result_path),
-        ],
-        check=False,
-        capture_output=True,
+    command = [
+        sys.executable,
+        "-m",
+        "aias_specialist.worker",
+        "--config",
+        str(config_path),
+        "--result",
+        str(result_path),
+    ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
     )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise RuntimeError(detail or f"Worker exited with code {completed.returncode}")
+    output_tail: list[str] = []
+    if process.stdout is None:
+        raise RuntimeError("Worker output stream is unavailable")
+    output_queue: queue.Queue[str | None] = queue.Queue()
+
+    def read_output() -> None:
+        for line in process.stdout:
+            output_queue.put(line)
+        output_queue.put(None)
+
+    threading.Thread(target=read_output, daemon=True).start()
+    started = time.monotonic()
+    while True:
+        try:
+            line = output_queue.get(timeout=30)
+        except queue.Empty:
+            elapsed = int(time.monotonic() - started)
+            print(f"[worker] still running elapsed={elapsed}s", flush=True)
+            continue
+        if line is None:
+            break
+        print(line, end="", flush=True)
+        output_tail.append(line)
+        output_tail = output_tail[-50:]
+    returncode = process.wait()
+    if returncode != 0:
+        detail = "".join(output_tail).strip()
+        raise RuntimeError(detail or f"Worker exited with code {returncode}")
     if not result_path.exists():
         raise RuntimeError(f"Worker did not create a result file: {result_path}")
     return json.loads(result_path.read_text(encoding="utf-8"))
@@ -347,6 +381,7 @@ def _lock_members(settings: Settings, members: list[dict[str, Any]], role: str) 
             "roles": [role],
         }
     if requests:
+        print(f"[model-lock] resolving {len(requests)} model revision(s)", flush=True)
         resolve_model_revisions(settings.paths.model_lock, list(requests.values()))
 
 
@@ -391,6 +426,10 @@ def _run_group(
         config_path=spec_path,
         output_dir=group_dir,
     )
+    print(
+        f"[{kind}] group={group_id} split={evaluation_split} candidates={len(members)}",
+        flush=True,
+    )
     _lock_members(settings, members, f"{kind}-candidate")
 
     rows = _load_rows(comparison_path)
@@ -400,6 +439,10 @@ def _run_group(
         if existing and existing.get("status") == "completed":
             run_dir = Path(str(existing.get("run_dir", "")))
             if run_dir.exists():
+                print(
+                    f"[{kind}] {member_id}: completed cache found; skipping",
+                    flush=True,
+                )
                 continue
         config_path = configs_dir / f"{member_id}.yaml"
         result_path = workers_dir / f"{member_id}.json"
@@ -418,6 +461,12 @@ def _run_group(
             status="running",
             config_path=config_path,
         )
+        print(
+            f"[{kind}] {member_id}: starting "
+            f"({member['model'].get('repo_id')} / "
+            f"{member['model'].get('compute_type', 'auto')})",
+            flush=True,
+        )
         try:
             result = _execute_config(config_path, result_path, isolated_process)
             row = _completed_row(
@@ -435,6 +484,12 @@ def _run_group(
                 config_path=config_path,
                 run_id=str(result["run_id"]),
             )
+            print(
+                f"[{kind}] {member_id}: completed "
+                f"WER={row['wer']:.4f} CER={row['cer']:.4f} "
+                f"RTF={row['aggregate_real_time_factor']:.4f}",
+                flush=True,
+            )
         except Exception as exc:
             rows[member_id] = _failed_row(member, evaluation_split, exc)
             store.upsert_group_member(
@@ -446,6 +501,7 @@ def _run_group(
                 config_path=config_path,
                 error=str(exc),
             )
+            print(f"[{kind}] {member_id}: failed: {exc}", flush=True)
             _write_comparison(rows, comparison_path, reference_member)
             if not continue_on_error:
                 store.finish_group(group_id, "failed", str(exc))
@@ -476,6 +532,10 @@ def _run_group(
     )
     status = "completed" if frame["status"].eq("completed").all() else "partial"
     store.finish_group(group_id, status)
+    print(
+        f"[{kind}] group={group_id} status={status} report={report_path}",
+        flush=True,
+    )
     return ExperimentGroupResult(
         group_id=group_id,
         group_dir=group_dir,

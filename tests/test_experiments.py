@@ -1,9 +1,11 @@
 from pathlib import Path
 
 import pandas as pd
+import pytest
 import yaml
 
 from aias_specialist.experiments import (
+    _execute_config,
     run_final_evaluation,
     run_model_benchmark,
     run_quantization_sweep,
@@ -126,3 +128,19 @@ def test_benchmark_rejects_test_split_for_model_selection(tmp_path: Path) -> Non
         assert "Reserve test" in str(exc)
     else:
         raise AssertionError("Benchmark should reject selection on the held-out test split")
+
+
+def test_isolated_worker_streams_progress(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    base_config = _base_config(tmp_path)
+    result_path = tmp_path / "worker-result.json"
+
+    result = _execute_config(base_config, result_path, isolated_process=True)
+
+    output = capsys.readouterr().out
+    assert "[pipeline] preparing manifest" in output
+    assert "[pipeline] completed" in output
+    assert result["run_id"]
+    assert result_path.exists()

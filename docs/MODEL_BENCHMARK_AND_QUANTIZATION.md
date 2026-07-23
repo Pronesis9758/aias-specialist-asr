@@ -45,6 +45,22 @@ aias finalize-evaluation \
 실패한 멤버만 다시 시도한다. 동일 ID의 snapshot과 현재 YAML이 다르면 실행을 차단한다.
 데이터, 모델 목록, 양자화 단계, 디코딩 설정을 바꿀 때는 그룹 ID의 버전을 올린다.
 
+실행 중에는 revision 고정, 모델 다운로드·변환, 샘플별 추론 진행률과 완료 지표를 즉시
+출력한다. `benchmark-models`가 revision 고정까지 수행하므로 바로 앞에서
+`model-matrix-lock`을 별도로 실행할 필요는 없다.
+
+## Colab 모델 캐시
+
+- 변환된 CTranslate2 모델은 항상 Google Drive의
+  `AI_Specialist_ASR_Project/models/ct2/` 아래에 저장하며 다음 런타임에서 재사용한다.
+- 같은 Colab 런타임에서는 Hugging Face 원본 모델도 `/content/cache/huggingface`에서
+  자동 재사용한다.
+- 런타임을 자주 재시작하면서 모델을 다시 변환해야 한다면 노트북 설정의
+  `PERSIST_HF_SOURCE_CACHE=True`로 원본까지 Drive에 보존할 수 있다.
+- 원본 캐시는 약 15GB 이상의 추가 공간을 사용할 수 있고 Drive I/O가 로컬 `/content`보다
+  느릴 수 있으므로 기본값은 `False`다. 일반적인 반복 평가에는 변환 모델 Drive 캐시만으로
+  충분하다.
+
 ## 실제 녹음으로 전환
 
 공개 데이터용 base config를 복사하고 `paths.manifest`를 승인된 실제 데이터 manifest로

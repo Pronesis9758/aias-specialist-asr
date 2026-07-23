@@ -36,11 +36,33 @@ def build() -> Path:
             'MODEL_MATRIX = "configs/benchmarks/whisper_models_colab.yaml"\n'
             'QUANTIZATION_SPEC = "configs/quantization/whisper_quantization_colab.yaml"\n'
             'BENCHMARK_ID = "public-whisper-model-benchmark-v1"\n'
-            'QUANTIZATION_ID = "public-whisper-quantization-v1"'
+            'QUANTIZATION_ID = "public-whisper-quantization-v1"\n'
+            "# 원본 Hugging Face 모델까지 Drive에 보존하려면 True로 변경합니다.\n"
+            "# 약 15GB 이상의 추가 Drive 공간과 느린 첫 변환 I/O가 필요할 수 있습니다.\n"
+            "PERSIST_HF_SOURCE_CACHE = False"
         ),
-        nbf.v4.new_markdown_cell("## 1. GPU 확인과 Google Drive 연결"),
+        nbf.v4.new_markdown_cell(
+            "## 1. GPU 확인과 Google Drive 연결\n\n"
+            "변환이 끝난 CTranslate2 모델은 항상 Drive의 `models/`에 보존됩니다. "
+            "`PERSIST_HF_SOURCE_CACHE=True`이면 변환 전 Hugging Face 원본도 Drive에 "
+            "보존하지만, 기본값은 빠른 첫 실행과 Drive 용량 절약을 위해 `/content` 캐시입니다."
+        ),
         nbf.v4.new_code_cell(
-            '!nvidia-smi\nfrom google.colab import drive\n\ndrive.mount("/content/drive")'
+            "!nvidia-smi\n"
+            "import os\n"
+            "from pathlib import Path\n"
+            "from google.colab import drive\n\n"
+            'drive.mount("/content/drive")\n\n'
+            "hf_cache_root = (\n"
+            '    Path(DRIVE_ROOT) / "cache/huggingface"\n'
+            "    if PERSIST_HF_SOURCE_CACHE\n"
+            '    else Path("/content/cache/huggingface")\n'
+            ")\n"
+            "hf_cache_root.mkdir(parents=True, exist_ok=True)\n"
+            'os.environ["HF_HOME"] = str(hf_cache_root)\n'
+            'os.environ["HF_HUB_CACHE"] = str(hf_cache_root / "hub")\n'
+            'print("Hugging Face source cache:", hf_cache_root)\n'
+            'print("Converted model cache:", Path(DRIVE_ROOT) / "models")'
         ),
         nbf.v4.new_markdown_cell(
             "## 2. GitHub 코드 동기화\n\n현재 저장소는 공개이므로 GitHub 토큰이 필요하지 않습니다."
@@ -96,12 +118,11 @@ def build() -> Path:
         nbf.v4.new_markdown_cell(
             "## 5. Whisper 모델 일괄 비교\n\n"
             "Tiny, Base, Small, Medium, Large-v3, Turbo를 같은 Validation 데이터·FP16·beam "
-            "size 5로 실행합니다. 완료된 모델은 Drive에 기록되어 재실행 시 건너뜁니다."
+            "size 5로 실행합니다. 완료된 모델은 Drive에 기록되어 재실행 시 건너뜁니다. "
+            "`benchmark-models`가 모델 revision 고정까지 자동 수행하므로 별도 lock 명령은 "
+            "필요하지 않습니다."
         ),
-        nbf.v4.new_code_cell(
-            "run_aias('model-matrix-lock', '--matrix', MODEL_MATRIX)\n"
-            "run_aias('benchmark-models', '--matrix', MODEL_MATRIX)"
-        ),
+        nbf.v4.new_code_cell("run_aias('benchmark-models', '--matrix', MODEL_MATRIX)"),
         nbf.v4.new_code_cell(
             "from pathlib import Path\n"
             "import pandas as pd\n\n"
