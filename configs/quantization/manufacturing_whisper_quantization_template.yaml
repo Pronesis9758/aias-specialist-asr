@@ -1,0 +1,28 @@
+quantization:
+  id: manufacturing-whisper-quantization-v1
+  name: 선택 제조 Whisper 모델 양자화 비교
+  base_config: configs/manufacturing_private_template.yaml
+  evaluation_split: validation
+  isolated_process: true
+  continue_on_error: true
+  reference_variant: float16
+  model_cache_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/manufacturing/quantized
+  variants:
+    - id: float32
+      enabled: false
+      conversion_quantization: float32
+      device: cuda
+      compute_type: float32
+    - id: float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+    - id: int8-float16
+      conversion_quantization: int8_float16
+      device: cuda
+      compute_type: int8_float16
+    - id: cpu-int8
+      enabled: false
+      conversion_quantization: int8
+      device: cpu
+      compute_type: int8

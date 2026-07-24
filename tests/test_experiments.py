@@ -10,6 +10,7 @@ from aias_specialist.experiments import (
     run_model_benchmark,
     run_quantization_sweep,
     select_experiment_member,
+    train_selected_whisper_lora,
 )
 from aias_specialist.store import ExperimentStore
 
@@ -144,3 +145,40 @@ def test_isolated_worker_streams_progress(
     assert "[pipeline] completed" in output
     assert result["run_id"]
     assert result_path.exists()
+
+
+def test_selected_model_drives_lora_training_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base_config = _base_config(tmp_path)
+    matrix = _experiment_spec(
+        ROOT / "configs/benchmarks/local_fixture.yaml",
+        tmp_path / "matrix-selected-training.yaml",
+        "benchmark",
+        "fixture-selected-training-test",
+        base_config,
+    )
+    benchmark = run_model_benchmark(matrix)
+    selection_path = select_experiment_member(
+        benchmark.group_dir,
+        "tiny",
+        reviewer="test-reviewer",
+        reason="Selected training configuration test",
+    )
+    fake_run_dir = tmp_path / "artifacts/runs/train-selected"
+    fake_run_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        "aias_specialist.experiments.train_whisper_lora",
+        lambda settings: fake_run_dir,
+    )
+
+    result = train_selected_whisper_lora(selection_path, base_config)
+
+    generated = yaml.safe_load(
+        (benchmark.group_dir / "selected_training_config.yaml").read_text(encoding="utf-8")
+    )
+    assert generated["training"]["repo_id"] == "fixture/whisper-tiny"
+    assert generated["training"]["enabled"] is True
+    assert result["run_dir"] == str(fake_run_dir)

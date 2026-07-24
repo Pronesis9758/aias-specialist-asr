@@ -95,6 +95,7 @@ def run_pipeline(settings: Settings) -> RunResult:
             settings.paths.manifest,
             run_dir / "prepared_manifest.csv",
             settings.model.backend,
+            settings.governance,
         )
         terms = load_domain_terms(settings.paths.domain_terms)
         terms.to_csv(run_dir / "domain_terms.snapshot.csv", index=False, encoding="utf-8-sig")

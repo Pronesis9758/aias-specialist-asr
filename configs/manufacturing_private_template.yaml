@@ -1,0 +1,77 @@
+project:
+  name: AI Specialist 제조 음성 ASR
+  owner: Pronesis9758
+  seed: 42
+
+paths:
+  manifest: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/private/manufacturing/manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/runs
+  database: /content/drive/MyDrive/AI_Specialist_ASR_Project/backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+model:
+  backend: faster_whisper
+  repo_id: Systran/faster-whisper-tiny
+  revision: main
+  local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/baseline/faster-whisper-tiny
+  language: ko
+  device: cuda
+  compute_type: float16
+  beam_size: 5
+
+evaluation:
+  split: test
+  warmup_samples: 1
+  timing_repetitions: 3
+
+correction:
+  enabled: true
+  case_sensitive: false
+
+training:
+  enabled: true
+  repo_id: openai/whisper-small
+  revision: main
+  method: lora
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/manufacturing-whisper-lora
+  train_batch_size: 4
+  eval_batch_size: 4
+  gradient_accumulation_steps: 2
+  gradient_checkpointing: false
+  learning_rate: 0.0001
+  max_steps: 500
+  warmup_steps: 50
+  save_steps: 50
+  eval_steps: 50
+  logging_steps: 10
+  save_total_limit: 3
+  resume_from_checkpoint: auto
+
+governance:
+  mode: strict_private
+  approval_file: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/private/manufacturing/data_approval.yaml
+  require_speaker_disjoint_splits: true
+  require_label_review: true
+  require_deidentified: true
+  require_external_processing_approval: true
+  required_manifest_columns:
+    - speaker_id
+    - scenario_id
+    - noise_condition
+    - approval_id
+    - deidentified
+    - label_reviewer
+    - label_review_status
+
+assessment:
+  model_matrix: configs/benchmarks/manufacturing_whisper_models_template.yaml
+  benchmark_id: manufacturing-whisper-model-benchmark-v1
+  quantization_id: manufacturing-whisper-quantization-v1
+  acceptance_criteria: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/private/manufacturing/acceptance_criteria.yaml
+  hardware_profile: configs/hardware/colab_gpu_validation.yaml
+  human_signoff: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/private/manufacturing/human_review_signoff.yaml
+
+report:
+  title: 제조 음성 ASR 모델 선정 및 최종평가 보고서
+  include_charts: true

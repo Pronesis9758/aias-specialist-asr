@@ -29,12 +29,14 @@
 
 ## 현재 상태
 
-- 단계 0: 로컬 프로젝트·CI·Colab 노트북 완료, 생성된 GitHub 저장소 게시 인증 대기
+- 단계 0: 로컬 프로젝트·CI·Colab 노트북과 GitHub 저장소 자동화 완료
 - 단계 1: CC BY 4.0 Zeroth-Korean 고정 리비전에서 64개 공개 샘플 자동 준비 가능
 - 단계 2~3: 실제 공개 음성의 CPU Baseline End-to-End와 Word 보고서 생성 검증 완료
-- 단계 4: Colab T4 기준 Whisper-tiny LoRA 30-step 데모와 checkpoint 재개 코드 준비
-- 단계 5~6: 실제 제조 test split과 GPU 실행 결과가 준비된 뒤 활성화
+- 단계 4: 선택 모델 LoRA, checkpoint 재개와 Base/LoRA 고정 Test 비교 코드 완료
+- 단계 5: Whisper 6종 Validation 비교와 FP16·INT8-FP16 양자화 GPU 실행 완료
+- 단계 6: 선택 기록·고정 Test 자동화 완료, 실제 제조 데이터 결과 대기
 - 단계 7: 실행별 Word 보고서·SQLite 백데이터 자동 생성 및 구조 감사 완료
+- 심사 대응: Solution 조사, strict governance, HW 측정 계획과 준비도 감사 CLI 완료
 
 공개 샘플은 파이프라인 기술 검증 전용이다. 제조 도메인 일반화 성능, 제조 용어 재현율,
 현장 배포 가능성은 검수된 제조 음성으로 별도 평가하기 전까지 주장하지 않는다.

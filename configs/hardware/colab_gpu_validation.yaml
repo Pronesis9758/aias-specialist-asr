@@ -1,0 +1,10 @@
+deployment:
+  target_name: Google Colab GPU validation runtime
+  deployment_mode: development_validation
+  on_device_claim: false
+  warmup_samples: 1
+  timing_repetitions: 3
+  notes:
+    - GPU model and driver are captured for every run in environment.json.
+    - Colab results validate the application pipeline, not production on-device readiness.
+    - If an edge target is selected, copy target_device_template.yaml and benchmark on that device.

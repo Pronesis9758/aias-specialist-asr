@@ -240,6 +240,7 @@ def train_whisper_lora(settings: Settings) -> Path:
             settings.paths.manifest,
             run_dir / "prepared_manifest.csv",
             backend="faster_whisper",
+            governance=settings.governance,
         )
         splits = set(prepared["split"].str.lower())
         if not {"train", "validation", "test"}.issubset(splits):

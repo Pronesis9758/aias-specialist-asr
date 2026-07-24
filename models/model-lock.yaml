@@ -5,9 +5,40 @@ models:
     resolved_revision: d90ca5fe260221311c53c58e660288d3deb8d356
     roles:
     - baseline
+  openai/whisper-base:
+    repo_id: openai/whisper-base
+    requested_revision: main
+    resolved_revision: e37978b90ca9030d5170a5c07aadb050351a65bb
+    roles:
+    - benchmark-candidate
+  openai/whisper-large-v3:
+    repo_id: openai/whisper-large-v3
+    requested_revision: main
+    resolved_revision: 06f233fe06e710322aca913c1bc4249a0d71fce1
+    roles:
+    - benchmark-candidate
+  openai/whisper-large-v3-turbo:
+    repo_id: openai/whisper-large-v3-turbo
+    requested_revision: main
+    resolved_revision: 41f01f3fe87f28c78e2fbf8b568835947dd65ed9
+    roles:
+    - benchmark-candidate
+  openai/whisper-medium:
+    repo_id: openai/whisper-medium
+    requested_revision: main
+    resolved_revision: abdf7c39ab9d0397620ccaea8974cc764cd0953e
+    roles:
+    - benchmark-candidate
+  openai/whisper-small:
+    repo_id: openai/whisper-small
+    requested_revision: main
+    resolved_revision: 973afd24965f72e36ca33b3055d56a652f456b4d
+    roles:
+    - benchmark-candidate
   openai/whisper-tiny:
     repo_id: openai/whisper-tiny
     requested_revision: main
     resolved_revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
     roles:
+    - benchmark-candidate
     - training

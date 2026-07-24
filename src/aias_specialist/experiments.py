@@ -20,6 +20,7 @@ from .config import Settings, load_settings
 from .models import resolve_model_revisions
 from .pipeline import run_pipeline
 from .store import ExperimentStore
+from .training import train_whisper_lora
 from .utils import new_run_id, utc_now, write_json
 
 MODEL_KEYS = {
@@ -148,7 +149,10 @@ def _write_member_config(
 ) -> None:
     raw = _absolute_base_config(settings.raw, settings)
     raw["model"] = model
-    raw["evaluation"] = {"split": evaluation_split}
+    raw["evaluation"] = {
+        **raw.get("evaluation", {}),
+        "split": evaluation_split,
+    }
     raw["training"] = {"enabled": False, "reason": "comparison inference run"}
     raw.setdefault("report", {})["title"] = title
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -787,7 +791,10 @@ def run_final_evaluation(
     settings = load_settings(base_path)
     raw = _absolute_base_config(settings.raw, settings)
     raw["model"] = selection["model"]
-    raw["evaluation"] = {"split": "test"}
+    raw["evaluation"] = {
+        **raw.get("evaluation", {}),
+        "split": "test",
+    }
     raw["training"] = {"enabled": False, "reason": "final held-out test evaluation"}
     raw.setdefault("report", {})["title"] = (
         f"최종 Test 평가 - {selection.get('model_id')} / {selection.get('variant_id')}"
@@ -809,3 +816,41 @@ def run_final_evaluation(
     }
     write_json(selected_path.parent / "final_test_result.json", summary)
     return summary
+
+
+def train_selected_whisper_lora(
+    selection_path: str | Path,
+    base_config_path: str | Path,
+) -> dict[str, Any]:
+    selected_path = Path(selection_path).expanduser().resolve()
+    base_path = Path(base_config_path).expanduser().resolve()
+    selection = _selection_payload(selected_path)
+    if selection.get("source_kind") != "benchmark":
+        raise ValueError("LoRA training requires a model_selection.yaml from a benchmark")
+
+    settings = load_settings(base_path)
+    raw = _absolute_base_config(settings.raw, settings)
+    training = raw.setdefault("training", {})
+    training["enabled"] = True
+    training["repo_id"] = str(selection["model"]["repo_id"])
+    model_id = str(selection.get("model_id") or selection.get("member_id"))
+    output_root = str(training.get("output_dir", "checkpoints/manufacturing-whisper-lora"))
+    training["output_dir"] = f"{output_root.rstrip('/')}/{model_id}"
+    raw.setdefault("report", {})["title"] = f"선택 Whisper LoRA 평가 - {model_id}"
+    config_path = selected_path.parent / "selected_training_config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(raw, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    run_dir = train_whisper_lora(load_settings(config_path))
+    result = {
+        "selection_path": str(selected_path),
+        "config_path": str(config_path),
+        "model_id": model_id,
+        "model_repo": str(selection["model"]["repo_id"]),
+        "run_dir": str(run_dir),
+        "report_path": str(run_dir / "reports/evaluation_report.docx"),
+        "human_review_required": True,
+    }
+    write_json(selected_path.parent / "selected_training_result.json", result)
+    return result

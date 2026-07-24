@@ -40,6 +40,8 @@ class ModelConfig:
 @dataclass(frozen=True)
 class EvaluationConfig:
     split: str = "test"
+    warmup_samples: int = 0
+    timing_repetitions: int = 1
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,17 @@ class ReportConfig:
 
 
 @dataclass(frozen=True)
+class GovernanceConfig:
+    mode: str = "standard"
+    approval_file: Path | None = None
+    require_speaker_disjoint_splits: bool = False
+    require_label_review: bool = False
+    require_deidentified: bool = False
+    require_external_processing_approval: bool = False
+    required_manifest_columns: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Settings:
     config_path: Path
     project_root: Path
@@ -71,6 +84,7 @@ class Settings:
     correction: CorrectionConfig
     training: TrainingConfig
     report: ReportConfig
+    governance: GovernanceConfig
     raw: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
@@ -137,6 +151,23 @@ def load_settings(config_path: str | Path) -> Settings:
     evaluation_split = str(evaluation.get("split", "test")).strip().lower()
     if evaluation_split not in {"train", "validation", "test"}:
         raise ValueError("evaluation.split must be train, validation, or test")
+    warmup_samples = int(evaluation.get("warmup_samples", 0))
+    timing_repetitions = int(evaluation.get("timing_repetitions", 1))
+    if warmup_samples < 0:
+        raise ValueError("evaluation.warmup_samples must be zero or greater")
+    if timing_repetitions < 1:
+        raise ValueError("evaluation.timing_repetitions must be one or greater")
+
+    governance = raw.get("governance", {})
+    if not isinstance(governance, dict):
+        raise ValueError("Config section 'governance' must be a mapping")
+    governance_mode = str(governance.get("mode", "standard")).strip().lower()
+    if governance_mode not in {"standard", "strict_private"}:
+        raise ValueError("governance.mode must be standard or strict_private")
+    approval_file = governance.get("approval_file")
+    required_manifest_columns = governance.get("required_manifest_columns", [])
+    if not isinstance(required_manifest_columns, list):
+        raise ValueError("governance.required_manifest_columns must be a list")
 
     return Settings(
         config_path=path,
@@ -169,7 +200,11 @@ def load_settings(config_path: str | Path) -> Settings:
             compute_type=str(model.get("compute_type", "auto")),
             beam_size=int(model.get("beam_size", 5)),
         ),
-        evaluation=EvaluationConfig(split=evaluation_split),
+        evaluation=EvaluationConfig(
+            split=evaluation_split,
+            warmup_samples=warmup_samples,
+            timing_repetitions=timing_repetitions,
+        ),
         correction=CorrectionConfig(
             enabled=bool(correction.get("enabled", True)),
             case_sensitive=bool(correction.get("case_sensitive", False)),
@@ -181,6 +216,19 @@ def load_settings(config_path: str | Path) -> Settings:
         report=ReportConfig(
             title=str(report.get("title", "ASR Evaluation Report")),
             include_charts=bool(report.get("include_charts", True)),
+        ),
+        governance=GovernanceConfig(
+            mode=governance_mode,
+            approval_file=(_resolve(root, str(approval_file)) if approval_file else None),
+            require_speaker_disjoint_splits=bool(
+                governance.get("require_speaker_disjoint_splits", False)
+            ),
+            require_label_review=bool(governance.get("require_label_review", False)),
+            require_deidentified=bool(governance.get("require_deidentified", False)),
+            require_external_processing_approval=bool(
+                governance.get("require_external_processing_approval", False)
+            ),
+            required_manifest_columns=tuple(str(column) for column in required_manifest_columns),
         ),
         raw=raw,
     )

@@ -67,6 +67,12 @@ aias finalize-evaluation \
 바꾼다. 실제 음성은 `data/private/` 또는 승인된 저장소에 보관하며 Git에 커밋하지 않는다.
 Manifest에는 출처와 동의·승인 상태가 있어야 하며, 정답 문장과 split은 사람이 검수한다.
 
+실제 제조 데이터에서는 `configs/manufacturing_private_template.yaml`,
+`configs/benchmarks/manufacturing_whisper_models_template.yaml`,
+`configs/quantization/manufacturing_whisper_quantization_template.yaml`을 사용한다. 모델 선택
+후에는 `train-selected-whisper`로 선택된 모델의 LoRA 결과를 남긴다. 성능 측정은 warm-up
+1개를 제외하고 샘플당 3회 반복한 중앙 지연시간을 사용한다.
+
 ## 보고서 해석
 
 Validation 보고서는 선택 근거이고 최종 성능 보고서가 아니다. Test 보고서도 실제 제조

@@ -16,8 +16,32 @@ WER/CER/용어 정확도 평가, 실행 이력 누적, Word 보고서 생성을 
 - 실행별 설정/환경/예측/지표/보고서 저장
 - SQLite 실험 레지스트리에 백데이터 누적
 - 로컬과 Google Colab에서 동일한 설정 파일 사용
+- 승인·비식별·전사 검수와 화자 독립 split을 강제하는 제조 데이터 모드
+- 네 가지 심사기준의 제출 증빙 누락을 자동 확인하는 준비도 감사
 
 Fine-tuning과 실제 현장 데이터 사용은 데이터·보안·GPU 확인 후 활성화합니다.
+
+## 실제 제조 데이터 전 준비
+
+실제 음성과 정답 전사가 없어도 다음 항목은 준비되어 있습니다.
+
+- Solution 후보 조사와 Whisper Baseline 선정 근거
+- strict private manifest·데이터 승인·사람 최종 검토 양식
+- 화자가 Train/Validation/Test에 중복되지 않는지 자동 검증
+- 모델 선택 결과를 받아 해당 모델을 LoRA 학습하는 명령
+- warm-up 제외 및 3회 반복 중앙값 기반 HW 성능 측정 설정
+- 모델 비교·LoRA·양자화·최종 Test·사람 승인의 증빙 완성도 자동 점검
+
+제조 데이터용 실행 진입점은 `notebooks/colab_manufacturing_assessment.ipynb`와
+`configs/manufacturing_private_template.yaml`입니다. 현재 준비 상태를 확인하려면:
+
+```powershell
+uv run aias assessment-audit `
+  --config configs/manufacturing_private_template.yaml `
+  --output-dir reports/generated/assessment_readiness
+```
+
+음성이 준비되기 전에는 데이터·실험 항목이 `waiting`으로 표시되는 것이 정상입니다.
 
 ## 모델·양자화 비교 Colab 실행
 
@@ -129,10 +153,12 @@ aias run --config ...               전체 파이프라인 실행
 aias model-matrix-lock --matrix ... 모델 행렬 전체 revision 고정
 aias benchmark-models --matrix ...  Validation 모델 비교
 aias select-model ...               사람의 모델 선택과 이유 기록
+aias train-selected-whisper ...     선택된 모델의 LoRA 학습과 Base/Test 비교
 aias quantization-sweep ...         선택 모델의 양자화 비교
 aias select-quantization ...        사람의 양자화 선택과 이유 기록
 aias finalize-evaluation ...        고정 Test 최종평가
 aias history                        누적 실행 이력 조회
+aias assessment-audit ...           심사기준별 제출 증빙 준비 상태 점검
 ```
 
 ## 디렉터리

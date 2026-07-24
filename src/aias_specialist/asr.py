@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import time
 from pathlib import Path
+from statistics import median
 
 import pandas as pd
 import psutil
@@ -73,6 +74,8 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
         output["model_size_bytes"] = 0
         output["process_rss_mb"] = 0.0
         output["gpu_memory_mb"] = 0.0
+        output["warmup_samples"] = settings.evaluation.warmup_samples
+        output["timing_repetitions"] = settings.evaluation.timing_repetitions
         return output, "fixture"
 
     preparation_started = time.perf_counter()
@@ -94,21 +97,45 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
     peak_gpu_memory_mb = _gpu_memory_used_mb()
     rows: list[dict[str, object]] = []
     records = frame.to_dict(orient="records")
-    for index, record in enumerate(records, start=1):
-        print(f"[inference] sample {index}/{len(records)}", flush=True)
-        audio_path = Path(str(record["audio_path"]))
-        started = time.perf_counter()
-        segments, info = model.transcribe(
-            str(audio_path),
+    warmup_count = min(settings.evaluation.warmup_samples, len(records))
+    for warmup_index, record in enumerate(records[:warmup_count], start=1):
+        print(f"[inference] warmup {warmup_index}/{warmup_count}", flush=True)
+        segments, _ = model.transcribe(
+            str(Path(str(record["audio_path"]))),
             language=settings.model.language,
             beam_size=settings.model.beam_size,
             vad_filter=True,
         )
-        prediction = " ".join(segment.text.strip() for segment in segments).strip()
-        latency = time.perf_counter() - started
-        duration = float(getattr(info, "duration", 0.0) or 0.0)
-        peak_rss_mb = max(peak_rss_mb, process.memory_info().rss / (1024 * 1024))
-        peak_gpu_memory_mb = max(peak_gpu_memory_mb, _gpu_memory_used_mb())
+        list(segments)
+
+    for index, record in enumerate(records, start=1):
+        print(f"[inference] sample {index}/{len(records)}", flush=True)
+        audio_path = Path(str(record["audio_path"]))
+        latencies: list[float] = []
+        predictions: list[str] = []
+        durations: list[float] = []
+        for repetition in range(1, settings.evaluation.timing_repetitions + 1):
+            if settings.evaluation.timing_repetitions > 1:
+                print(
+                    f"[inference] sample {index}/{len(records)} "
+                    f"repetition {repetition}/{settings.evaluation.timing_repetitions}",
+                    flush=True,
+                )
+            started = time.perf_counter()
+            segments, info = model.transcribe(
+                str(audio_path),
+                language=settings.model.language,
+                beam_size=settings.model.beam_size,
+                vad_filter=True,
+            )
+            predictions.append(" ".join(segment.text.strip() for segment in segments).strip())
+            latencies.append(time.perf_counter() - started)
+            durations.append(float(getattr(info, "duration", 0.0) or 0.0))
+            peak_rss_mb = max(peak_rss_mb, process.memory_info().rss / (1024 * 1024))
+            peak_gpu_memory_mb = max(peak_gpu_memory_mb, _gpu_memory_used_mb())
+        prediction = predictions[0]
+        latency = median(latencies)
+        duration = median(durations)
         rows.append(
             {
                 **record,
@@ -128,6 +155,8 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
                 "model_size_bytes": model_size_bytes,
                 "process_rss_mb": peak_rss_mb,
                 "gpu_memory_mb": peak_gpu_memory_mb,
+                "warmup_samples": warmup_count,
+                "timing_repetitions": settings.evaluation.timing_repetitions,
             }
         )
         print(

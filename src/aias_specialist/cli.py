@@ -13,10 +13,12 @@ from .experiments import (
     run_model_benchmark,
     run_quantization_sweep,
     select_experiment_member,
+    train_selected_whisper_lora,
 )
 from .hf_data import prepare_hf_dataset
 from .models import download_baseline_model, resolve_model_lock
 from .pipeline import run_pipeline
+from .readiness import write_assessment_readiness
 from .store import ExperimentStore
 from .training import train_whisper_lora
 
@@ -92,6 +94,16 @@ def train_whisper(
     settings = load_settings(config)
     run_dir = train_whisper_lora(settings)
     typer.echo(f"Training completed: {run_dir}")
+
+
+@app.command("train-selected-whisper")
+def train_selected_whisper(
+    selection: Path = typer.Option(..., exists=True, dir_okay=False),
+    config: Path = typer.Option(..., exists=True, dir_okay=False),
+) -> None:
+    """LoRA fine-tune the human-selected benchmark model."""
+    result = train_selected_whisper_lora(selection, config)
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 @app.command()
@@ -191,6 +203,35 @@ def finalize_evaluation(
     """Run one final held-out test evaluation after model and precision selection."""
     result = run_final_evaluation(selection, config)
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+@app.command("assessment-audit")
+def assessment_audit(
+    config: Path = typer.Option(
+        Path("configs/manufacturing_private_template.yaml"),
+        exists=True,
+        dir_okay=False,
+    ),
+    output_dir: Path = typer.Option(
+        Path("reports/generated/assessment_readiness"),
+        file_okay=False,
+    ),
+    fail_on_blocker: bool = typer.Option(
+        False,
+        help="Return a non-zero exit code while required evidence is incomplete.",
+    ),
+) -> None:
+    """Generate a four-criterion assessment evidence readiness report."""
+    settings = load_settings(config)
+    result, json_path, markdown_path = write_assessment_readiness(
+        settings,
+        output_dir.expanduser().resolve(),
+    )
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+    typer.echo(f"JSON: {json_path}")
+    typer.echo(f"Markdown: {markdown_path}")
+    if fail_on_blocker and result["overall_status"] != "ready":
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
