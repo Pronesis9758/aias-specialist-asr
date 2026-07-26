@@ -151,13 +151,21 @@ def select_model(
     model_id: str = typer.Option(..., help="Completed benchmark model ID."),
     reviewer: str = typer.Option(..., help="Human reviewer making the trade-off decision."),
     reason: str = typer.Option(..., help="Accuracy, speed, memory, and governance rationale."),
+    automated_proxy: bool = typer.Option(
+        False,
+        help=(
+            "Mark this as an automated public-proxy smoke selection, not a human "
+            "manufacturing decision."
+        ),
+    ),
 ) -> None:
-    """Record the human-selected model and its benchmark evidence."""
+    """Record a human model decision or a clearly labeled public-proxy smoke selection."""
     path = select_experiment_member(
         benchmark_dir,
         model_id,
         reviewer=reviewer,
         reason=reason,
+        human_reviewed=not automated_proxy,
     )
     typer.echo(f"Selection: {path}")
 
@@ -184,13 +192,21 @@ def select_quantization(
     variant_id: str = typer.Option(..., help="Completed quantization variant ID."),
     reviewer: str = typer.Option(..., help="Human reviewer making the deployment decision."),
     reason: str = typer.Option(..., help="Accuracy-loss and efficiency trade-off rationale."),
+    automated_proxy: bool = typer.Option(
+        False,
+        help=(
+            "Mark this as an automated public-proxy smoke selection, not a human "
+            "manufacturing decision."
+        ),
+    ),
 ) -> None:
-    """Record the human-selected quantization variant."""
+    """Record a human precision decision or a labeled public-proxy smoke selection."""
     path = select_experiment_member(
         quantization_dir,
         variant_id,
         reviewer=reviewer,
         reason=reason,
+        human_reviewed=not automated_proxy,
     )
     typer.echo(f"Selection: {path}")
 

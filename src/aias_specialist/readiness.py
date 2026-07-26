@@ -94,6 +94,25 @@ def _completed_table(path: Path) -> tuple[bool, str]:
     return True, f"{len(frame)} candidate(s) completed"
 
 
+def _check_human_selection(path: Path, label: str) -> tuple[bool, str]:
+    if not path.exists():
+        return False, f"human {label} selection is pending"
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    selection = payload.get("selection", {}) if isinstance(payload, dict) else {}
+    if selection.get("human_reviewed") is not True:
+        scope = str(selection.get("selection_scope", "unknown"))
+        return (
+            False,
+            f"{label} selection is an automated proxy result ({scope}); "
+            "human manufacturing review is still required",
+        )
+    reviewer = str(selection.get("reviewer", "")).strip()
+    reason = str(selection.get("reason", "")).strip()
+    if _placeholder(reviewer) or _placeholder(reason):
+        return False, f"human {label} selection reviewer or rationale is incomplete"
+    return True, f"human {label} selection is recorded by {reviewer}"
+
+
 def _model_repositories(settings: Settings, assessment: dict[str, Any]) -> set[str]:
     repositories = {settings.model.repo_id}
     training = settings.training.values or {}
@@ -334,15 +353,17 @@ def audit_assessment_readiness(settings: Settings) -> dict[str, Any]:
         benchmark_dir,
     )
     model_selection = benchmark_dir / "model_selection.yaml"
+    model_selection_ok, model_selection_message = _check_human_selection(
+        model_selection,
+        "model",
+    )
     _add(
         checks,
         "experiment.model_selection",
         "1",
-        "passed" if model_selection.exists() else "waiting",
+        "passed" if model_selection_ok else "waiting",
         True,
-        "human model selection is recorded"
-        if model_selection.exists()
-        else "human model selection is pending",
+        model_selection_message,
         model_selection,
     )
     selected_training_result = benchmark_dir / "selected_training_result.json"
@@ -385,15 +406,17 @@ def audit_assessment_readiness(settings: Settings) -> dict[str, Any]:
         quantization_dir,
     )
     quantization_selection = quantization_dir / "quantization_selection.yaml"
+    quantization_selection_ok, quantization_selection_message = _check_human_selection(
+        quantization_selection,
+        "quantization",
+    )
     _add(
         checks,
         "experiment.quantization_selection",
         "3",
-        "passed" if quantization_selection.exists() else "waiting",
+        "passed" if quantization_selection_ok else "waiting",
         True,
-        "human quantization selection is recorded"
-        if quantization_selection.exists()
-        else "human quantization selection is pending",
+        quantization_selection_message,
         quantization_selection,
     )
 

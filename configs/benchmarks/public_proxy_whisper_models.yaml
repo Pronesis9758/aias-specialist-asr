@@ -1,0 +1,38 @@
+benchmark:
+  id: public-proxy-whisper-model-benchmark-v1
+  name: 공개 Zeroth Validation 기반 Whisper 프록시 비교
+  base_config: configs/public_proxy_assessment.yaml
+  evaluation_split: validation
+  isolated_process: true
+  continue_on_error: true
+  models:
+    - id: tiny
+      backend: faster_whisper
+      repo_id: openai/whisper-tiny
+      revision: main
+      format: transformers
+      local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/ct2/tiny/float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+      beam_size: 5
+    - id: base
+      backend: faster_whisper
+      repo_id: openai/whisper-base
+      revision: main
+      format: transformers
+      local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/ct2/base/float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+      beam_size: 5
+    - id: small
+      backend: faster_whisper
+      repo_id: openai/whisper-small
+      revision: main
+      format: transformers
+      local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/ct2/small/float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+      beam_size: 5

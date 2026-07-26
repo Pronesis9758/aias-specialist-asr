@@ -32,8 +32,20 @@ Fine-tuning과 실제 현장 데이터 사용은 데이터·보안·GPU 확인 �
 - warm-up 제외 및 3회 반복 중앙값 기반 HW 성능 측정 설정
 - 모델 비교·LoRA·양자화·최종 Test·사람 승인의 증빙 완성도 자동 점검
 
-제조 데이터용 실행 진입점은 `notebooks/colab_manufacturing_assessment.ipynb`와
-`configs/manufacturing_private_template.yaml`입니다. 현재 준비 상태를 확인하려면:
+통합 실행 진입점은 `notebooks/colab_manufacturing_assessment.ipynb`입니다. 노트북의
+`DATA_MODE`에 따라 다음 설정을 사용합니다.
+
+- `PUBLIC_PROXY`: 고정 revision의 공개 `kresnik/zeroth_korean` 샘플로 데이터 준비,
+  3개 모델 비교, 자동 프록시 선택, LoRA, 양자화, 고정 Test, 보고서·SQLite 등록까지
+  전체 동작을 검증합니다.
+- `PRIVATE_MANUFACTURING`: `configs/manufacturing_private_template.yaml`과 승인된 제조
+  녹음·검수 전사를 사용하며, 모델과 양자화 선택을 사람 검토로 강제합니다.
+
+공개 프록시의 자동 선택에는 `human_reviewed: false`와
+`selection_scope: automated_public_proxy`가 기록됩니다. 따라서 정상 동작 확인에는 쓸 수
+있지만 제조 성능이나 심사 최종 결론의 근거로는 인정하지 않습니다.
+
+현재 제조 데이터 준비 상태를 확인하려면:
 
 ```powershell
 uv run aias assessment-audit `

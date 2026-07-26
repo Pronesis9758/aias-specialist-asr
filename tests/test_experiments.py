@@ -81,6 +81,8 @@ def test_benchmark_quantization_selection_and_final_test(tmp_path: Path) -> None
     selected = yaml.safe_load(model_selection.read_text(encoding="utf-8"))["selection"]
     assert selected["model_id"] == "tiny"
     assert selected["final_test_required"] is True
+    assert selected["human_reviewed"] is True
+    assert selected["selection_scope"] == "human_review"
 
     quantization_spec = _experiment_spec(
         ROOT / "configs/quantization/local_fixture.yaml",
@@ -182,3 +184,60 @@ def test_selected_model_drives_lora_training_config(
     assert generated["training"]["repo_id"] == "fixture/whisper-tiny"
     assert generated["training"]["enabled"] is True
     assert result["run_dir"] == str(fake_run_dir)
+
+
+def test_public_proxy_selection_is_not_marked_as_human_reviewed(tmp_path: Path) -> None:
+    base_config = _base_config(tmp_path)
+    matrix = _experiment_spec(
+        ROOT / "configs/benchmarks/local_fixture.yaml",
+        tmp_path / "matrix-public-proxy.yaml",
+        "benchmark",
+        "fixture-public-proxy-selection",
+        base_config,
+    )
+    benchmark = run_model_benchmark(matrix)
+
+    selection_path = select_experiment_member(
+        benchmark.group_dir,
+        "tiny",
+        reviewer="AUTOMATED_PUBLIC_PROXY",
+        reason="Pipeline and artifact smoke test only",
+        human_reviewed=False,
+    )
+
+    selection = yaml.safe_load(selection_path.read_text(encoding="utf-8"))["selection"]
+    assert selection["human_reviewed"] is False
+    assert selection["selection_scope"] == "automated_public_proxy"
+
+
+def test_strict_private_governance_rejects_automated_selection(tmp_path: Path) -> None:
+    base_config = _base_config(tmp_path)
+    matrix = _experiment_spec(
+        ROOT / "configs/benchmarks/local_fixture.yaml",
+        tmp_path / "matrix-strict-private.yaml",
+        "benchmark",
+        "fixture-strict-private-selection",
+        base_config,
+    )
+    benchmark = run_model_benchmark(matrix)
+    strict_config = yaml.safe_load(base_config.read_text(encoding="utf-8"))
+    strict_config["governance"] = {
+        "mode": "strict_private",
+        "approval_file": str(tmp_path / "data_approval.yaml"),
+        "require_speaker_disjoint_splits": True,
+        "require_label_review": True,
+        "require_deidentified": True,
+    }
+    base_config.write_text(
+        yaml.safe_dump(strict_config, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Automated proxy selection is not allowed"):
+        select_experiment_member(
+            benchmark.group_dir,
+            "tiny",
+            reviewer="AUTOMATED_PUBLIC_PROXY",
+            reason="This must not pass strict private governance",
+            human_reviewed=False,
+        )

@@ -712,6 +712,7 @@ def select_experiment_member(
     *,
     reviewer: str,
     reason: str,
+    human_reviewed: bool = True,
 ) -> Path:
     directory = Path(group_dir).expanduser().resolve()
     snapshots = list(directory.glob("*.snapshot.yaml"))
@@ -721,6 +722,12 @@ def select_experiment_member(
     kind = "benchmark" if "benchmark" in spec else "quantization"
     section = _section(spec, kind)
     group_id = _require_identifier(section.get("id"), f"{kind}.id")
+    settings = _base_settings(snapshots[0], section)
+    if not human_reviewed and settings.governance.mode == "strict_private":
+        raise ValueError(
+            "Automated proxy selection is not allowed with strict_private governance. "
+            "A human reviewer must select the manufacturing model or quantization variant."
+        )
     comparison_path = directory / f"{kind}_comparison.csv"
     frame = pd.read_csv(comparison_path, keep_default_na=False)
     matches = frame.loc[frame["member_id"].astype(str) == member_id]
@@ -747,7 +754,8 @@ def select_experiment_member(
             "selected_at": utc_now().isoformat(),
             "reviewer": reviewer,
             "reason": reason,
-            "human_reviewed": True,
+            "human_reviewed": human_reviewed,
+            "selection_scope": ("human_review" if human_reviewed else "automated_public_proxy"),
             "model": model,
             "metrics": {
                 key: _python_value(row[key])
@@ -768,7 +776,6 @@ def select_experiment_member(
     immutable_path.parent.mkdir(parents=True, exist_ok=True)
     immutable_path.write_text(serialized, encoding="utf-8")
     output_path.write_text(serialized, encoding="utf-8")
-    settings = _base_settings(snapshots[0], section)
     ExperimentStore(settings.paths.database).add_selection(
         selection_id=selection_id,
         group_id=group_id,
