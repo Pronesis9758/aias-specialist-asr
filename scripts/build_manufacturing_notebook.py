@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import nbformat as nbf
@@ -341,6 +343,10 @@ def build() -> Path:
     ]
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     nbf.write(notebook, OUTPUT)
+    subprocess.run(
+        [sys.executable, "-m", "ruff", "format", str(OUTPUT)],
+        check=True,
+    )
     return OUTPUT
 
 
