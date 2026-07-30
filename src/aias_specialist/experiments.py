@@ -88,8 +88,8 @@ def _base_settings(spec_path: Path, section: dict[str, Any]) -> Settings:
 def _snapshot_spec(spec: dict[str, Any], path: Path) -> None:
     canonical = yaml.safe_dump(spec, allow_unicode=True, sort_keys=False)
     if path.exists():
-        existing = yaml.safe_dump(_load_yaml(path), allow_unicode=True, sort_keys=False)
-        if existing != canonical:
+        existing_spec = _load_yaml(path)
+        if _snapshot_identity(existing_spec) != _snapshot_identity(spec):
             raise ValueError(
                 f"Experiment ID already exists with a different specification: {path.parent.name}. "
                 "Use a new ID when models, variants, data, or settings change."
@@ -97,6 +97,22 @@ def _snapshot_spec(spec: dict[str, Any], path: Path) -> None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(canonical, encoding="utf-8")
+
+
+def _snapshot_identity(spec: dict[str, Any]) -> str:
+    """Return the material experiment identity used for safe cache reuse.
+
+    Quantization snapshots retain the first immutable model-selection record for
+    provenance. Repeating the same decision creates a new selection event and
+    therefore a new ``selection_id`` and ``selected_at`` timestamp, but neither
+    value changes the model, data, or runtime settings being evaluated.
+    """
+    stable = deepcopy(spec)
+    selected_model = stable.get("selected_model")
+    if isinstance(selected_model, dict):
+        selected_model.pop("selection_id", None)
+        selected_model.pop("selected_at", None)
+    return yaml.safe_dump(stable, allow_unicode=True, sort_keys=True)
 
 
 def _absolute_base_config(raw: dict[str, Any], settings: Settings) -> dict[str, Any]:

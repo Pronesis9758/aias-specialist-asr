@@ -99,6 +99,33 @@ def test_benchmark_quantization_selection_and_final_test(tmp_path: Path) -> None
     assert "rtf_speedup_vs_reference" in quantization_rows
     assert quantization.report_path.exists()
 
+    repeated_model_selection = select_experiment_member(
+        benchmark.group_dir,
+        "tiny",
+        reviewer="test-reviewer",
+        reason="Fixture selection for orchestration validation",
+    )
+    repeated_selection = yaml.safe_load(
+        repeated_model_selection.read_text(encoding="utf-8")
+    )["selection"]
+    assert repeated_selection["selection_id"] != selected["selection_id"]
+
+    reused_quantization = run_quantization_sweep(
+        quantization_spec,
+        repeated_model_selection,
+    )
+    assert reused_quantization.group_dir == quantization.group_dir
+    assert reused_quantization.status == "completed"
+
+    changed_model_selection = select_experiment_member(
+        benchmark.group_dir,
+        "base",
+        reviewer="test-reviewer",
+        reason="Materially different model selection",
+    )
+    with pytest.raises(ValueError, match="different specification"):
+        run_quantization_sweep(quantization_spec, changed_model_selection)
+
     quantization_selection = select_experiment_member(
         quantization.group_dir,
         "int8-float16",
