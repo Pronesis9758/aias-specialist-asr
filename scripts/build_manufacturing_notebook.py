@@ -114,7 +114,7 @@ def build() -> Path:
         ),
         nbf.v4.new_markdown_cell("## 3. 의존성 설치와 실행 함수"),
         nbf.v4.new_code_cell(
-            "%pip uninstall -y torchao\n"
+            "%pip uninstall -y torchao gradio gradio-client\n"
             '%pip install -q -e ".[train]" "transformers>=4.46,<5" "peft>=0.14,<0.19"\n\n'
             "import sys\n\n"
             "def run_aias(*args):\n"

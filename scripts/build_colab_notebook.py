@@ -111,8 +111,9 @@ def build() -> Path:
         nbf.v4.new_markdown_cell("### 3. 의존성 설치"),
         nbf.v4.new_code_cell(
             "# Colab 이미지를 기준으로 설치합니다. 기본 CUDA PyTorch는 유지하고,\n"
-            "# Colab에 따라 함께 설치되는 torchao는 Whisper/PEFT와 충돌할 수 있어 제거합니다.\n"
-            "%pip uninstall -y torchao\n"
+            "# Colab에 사전 설치된 torchao와 Gradio는\n"
+            "# Whisper/PEFT 의존성과 충돌할 수 있어 제거합니다.\n"
+            "%pip uninstall -y torchao gradio gradio-client\n"
             '%pip install -q -e ".[train]" "transformers>=4.46,<5" "peft>=0.14,<0.19"\n'
             "import sys, torch, transformers, peft\n"
             'print({"python": sys.executable, "torch": torch.__version__,\n'

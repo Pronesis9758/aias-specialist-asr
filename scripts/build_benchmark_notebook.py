@@ -96,7 +96,7 @@ def build() -> Path:
             "Transformers 학습 extra를 함께 설치합니다."
         ),
         nbf.v4.new_code_cell(
-            "%pip uninstall -y torchao\n"
+            "%pip uninstall -y torchao gradio gradio-client\n"
             '%pip install -q -e ".[train]" "transformers>=4.46,<5" "peft>=0.14,<0.19"\n'
             "import sys, torch, ctranslate2\n\n"
             'print({"python": sys.executable, "cuda": torch.cuda.is_available(),\n'
