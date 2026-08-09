@@ -1,0 +1,70 @@
+project:
+  name: AI Specialist 합성 제조 음성 ASR 기능 검증
+  owner: Pronesis9758
+  seed: 42
+
+paths:
+  manifest: data/sample/manufacturing_synthetic/manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/runs
+  database: /content/drive/MyDrive/AI_Specialist_ASR_Project/backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+dataset:
+  repo_id: local/synthetic-manufacturing-korean-asr
+  revision: generator-v1-20260810
+  license: project-functional-fixture
+  train_samples: 18
+  validation_samples: 6
+  test_samples: 6
+
+model:
+  backend: faster_whisper
+  repo_id: Systran/faster-whisper-tiny
+  revision: main
+  local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/synthetic/baseline/faster-whisper-tiny
+  language: ko
+  device: cuda
+  compute_type: float16
+  beam_size: 5
+
+evaluation:
+  split: test
+  warmup_samples: 1
+  timing_repetitions: 1
+
+correction:
+  enabled: true
+  case_sensitive: false
+
+training:
+  enabled: true
+  repo_id: openai/whisper-small
+  revision: main
+  method: lora
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/synthetic-manufacturing-whisper-lora
+  train_batch_size: 4
+  eval_batch_size: 4
+  gradient_accumulation_steps: 2
+  gradient_checkpointing: false
+  learning_rate: 0.0001
+  max_steps: 30
+  warmup_steps: 5
+  save_steps: 10
+  eval_steps: 10
+  logging_steps: 5
+  save_total_limit: 2
+  resume_from_checkpoint: auto
+
+governance:
+  mode: standard
+
+assessment:
+  model_matrix: configs/benchmarks/synthetic_manufacturing_whisper_models.yaml
+  benchmark_id: synthetic-manufacturing-whisper-model-benchmark-v1
+  quantization_id: synthetic-manufacturing-whisper-quantization-v1
+  hardware_profile: configs/hardware/colab_gpu_validation.yaml
+
+report:
+  title: 합성 제조 음성 ASR 기능 검증 보고서
+  include_charts: true

@@ -24,21 +24,23 @@ def build() -> Path:
     notebook["cells"] = [
         nbf.v4.new_markdown_cell(
             "# 제조 음성 ASR 심사 파이프라인\n\n"
-            "하나의 노트북에서 두 가지 데이터 모드를 사용합니다.\n\n"
+            "하나의 노트북에서 세 가지 데이터 모드를 사용합니다.\n\n"
             "- `PUBLIC_PROXY`: 공개 Zeroth 한국어 음성으로 데이터 준비부터 모델 비교, "
             "자동 프록시 선택, LoRA, 양자화, 고정 Test, 보고서·백데이터까지 전체 동작을 "
             "검증합니다.\n"
+            "- `SYNTHETIC_MANUFACTURING`: 저장소의 한국어 TTS 제조 문장 30개로 실제 제조 "
+            "데이터를 넣기 전 동일한 코드 경로를 검증합니다.\n"
             "- `PRIVATE_MANUFACTURING`: 나중에 승인된 제조 녹음과 검수 전사로 같은 코드를 "
             "다시 실행합니다. 이 모드의 모델·양자화 선택은 반드시 사람이 수행합니다.\n\n"
-            "> 공개 프록시 결과는 코드와 산출물의 정상 동작 증거입니다. 제조 현장 성능, "
+            "> 공개·합성 결과는 코드와 산출물의 정상 동작 증거입니다. 제조 현장 성능, "
             "배포 적합성 또는 심사 최종 결론의 증거로 사용하면 안 됩니다.\n\n"
             "**보안:** 카메라·마이크·패스키를 사용하지 않습니다. 실제 음성은 GitHub에 "
             "올리지 않고 승인된 비공개 Drive 경로만 사용합니다."
         ),
         nbf.v4.new_markdown_cell("## 0. 실행 모드"),
         nbf.v4.new_code_cell(
-            '# "PUBLIC_PROXY" 또는 "PRIVATE_MANUFACTURING"\n'
-            'DATA_MODE = "PUBLIC_PROXY"\n\n'
+            '# "PUBLIC_PROXY", "SYNTHETIC_MANUFACTURING", "PRIVATE_MANUFACTURING"\n'
+            'DATA_MODE = "SYNTHETIC_MANUFACTURING"\n\n'
             'GITHUB_REPO_URL = "https://github.com/Pronesis9758/aias-specialist-asr.git"\n'
             'GITHUB_BRANCH = "codex/whisper-benchmark-quantization"  # PR 병합 후 main\n'
             'PROJECT_DIR = "/content/AIAS"\n'
@@ -51,6 +53,15 @@ def build() -> Path:
             '"configs/quantization/public_proxy_whisper_quantization.yaml",\n'
             '        "benchmark_id": "public-proxy-whisper-model-benchmark-v1",\n'
             '        "quantization_id": "public-proxy-whisper-quantization-v1",\n'
+            "    },\n"
+            '    "SYNTHETIC_MANUFACTURING": {\n'
+            '        "config": "configs/synthetic_manufacturing_sample.yaml",\n'
+            '        "matrix": '
+            '"configs/benchmarks/synthetic_manufacturing_whisper_models.yaml",\n'
+            '        "quantization": '
+            '"configs/quantization/synthetic_manufacturing_whisper_quantization.yaml",\n'
+            '        "benchmark_id": "synthetic-manufacturing-whisper-model-benchmark-v1",\n'
+            '        "quantization_id": "synthetic-manufacturing-whisper-quantization-v1",\n'
             "    },\n"
             '    "PRIVATE_MANUFACTURING": {\n'
             '        "config": "configs/manufacturing_private_template.yaml",\n'
@@ -72,6 +83,8 @@ def build() -> Path:
             "QUANTIZATION_ID = mode['quantization_id']\n"
             'PRIVATE_ROOT = f"{DRIVE_ROOT}/data/private/manufacturing"\n'
             "IS_PUBLIC_PROXY = DATA_MODE == 'PUBLIC_PROXY'\n"
+            "IS_SYNTHETIC_MANUFACTURING = DATA_MODE == 'SYNTHETIC_MANUFACTURING'\n"
+            "IS_AUTOMATED_PROXY = IS_PUBLIC_PROXY or IS_SYNTHETIC_MANUFACTURING\n"
             'print("Mode:", DATA_MODE)\n'
             'print("Config:", CONFIG)'
         ),
@@ -126,8 +139,9 @@ def build() -> Path:
         nbf.v4.new_markdown_cell(
             "## 4. 데이터 준비\n\n"
             "`PUBLIC_PROXY`에서는 고정 revision의 `kresnik/zeroth_korean` 일부만 스트리밍해 "
-            "Drive에 저장합니다. `PRIVATE_MANUFACTURING`에서는 기존 파일을 덮어쓰지 않고 "
-            "입력 양식을 준비합니다."
+            "Drive에 저장합니다. `SYNTHETIC_MANUFACTURING`에서는 저장소에 포함된 TTS WAV와 "
+            "정답 manifest를 검증합니다. `PRIVATE_MANUFACTURING`에서는 기존 파일을 덮어쓰지 "
+            "않고 입력 양식을 준비합니다."
         ),
         nbf.v4.new_code_cell(
             "from pathlib import Path\n"
@@ -142,6 +156,19 @@ def build() -> Path:
             "    if provenance_path.exists():\n"
             "        display(json.loads(provenance_path.read_text(encoding='utf-8')))\n"
             "    print('PUBLIC PROXY: 제조 성능 증거가 아닌 전체동작 검증 데이터입니다.')\n"
+            "elif IS_SYNTHETIC_MANUFACTURING:\n"
+            "    from aias_specialist.config import load_settings\n"
+            "    from aias_specialist.data import validate_manifest\n\n"
+            "    synthetic_settings = load_settings(CONFIG)\n"
+            "    synthetic_manifest = validate_manifest(\n"
+            "        synthetic_settings.paths.manifest, backend='faster_whisper'\n"
+            "    )\n"
+            "    display(synthetic_manifest.groupby(['split', 'noise_condition']).size())\n"
+            "    provenance_path = (\n"
+            "        synthetic_settings.paths.manifest.parent / 'dataset_provenance.json'\n"
+            "    )\n"
+            "    display(json.loads(provenance_path.read_text(encoding='utf-8')))\n"
+            "    print('SYNTHETIC: 실제 제조 성능이나 사람 검수 증거가 아닙니다.')\n"
             "else:\n"
             "    private_root = Path(PRIVATE_ROOT)\n"
             "    (private_root / 'audio').mkdir(parents=True, exist_ok=True)\n"
@@ -169,7 +196,7 @@ def build() -> Path:
         ),
         nbf.v4.new_markdown_cell(
             "## 5. Whisper 모델 비교\n\n"
-            "공개 프록시는 빠른 전체동작 검증을 위해 `tiny`, `base`, `small`을 비교합니다. "
+            "공개·합성 모드는 빠른 전체동작 검증을 위해 `tiny`, `base`, `small`을 비교합니다. "
             "실제 제조 모드는 6개 후보를 비교합니다. 모델과 변환본은 Drive 캐시에 재사용됩니다."
         ),
         nbf.v4.new_code_cell(
@@ -181,7 +208,8 @@ def build() -> Path:
         ),
         nbf.v4.new_markdown_cell(
             "## 6. 모델 선택\n\n"
-            "공개 프록시는 완료 후보 중 rank 1을 자동 선택하지만 사람 검토로 기록하지 않습니다. "
+            "공개·합성 모드는 완료 후보 중 rank 1을 자동 선택하지만 사람 검토로 기록하지 "
+            "않습니다. "
             "실제 제조 모드에서는 아래 사람 검토 값을 직접 입력해야 다음 단계로 진행됩니다."
         ),
         nbf.v4.new_code_cell(
@@ -194,14 +222,21 @@ def build() -> Path:
             "        ['rank', 'cer', 'wer', 'aggregate_real_time_factor'],\n"
             "        na_position='last',\n"
             "    ).iloc[0]\n\n"
-            "if IS_PUBLIC_PROXY:\n"
+            "if IS_AUTOMATED_PROXY:\n"
             "    selected_row = best_completed_member(benchmark_table)\n"
             "    SELECTED_MODEL = str(selected_row['member_id'])\n"
-            "    REVIEWER = 'AUTOMATED_PUBLIC_PROXY'\n"
-            "    MODEL_REASON = (\n"
-            "        '공개 Zeroth 프록시 rank 1 자동 선택. 코드·산출물 smoke test 전용이며 '\n"
-            "        '제조 모델 선정 또는 사람 검토 증거가 아님.'\n"
-            "    )\n"
+            "    if IS_PUBLIC_PROXY:\n"
+            "        REVIEWER = 'AUTOMATED_PUBLIC_PROXY'\n"
+            "        MODEL_REASON = (\n"
+            "            '공개 Zeroth 프록시 rank 1 자동 선택. 코드·산출물 smoke test '\n"
+            "            '전용이며 제조 모델 선정 또는 사람 검토 증거가 아님.'\n"
+            "        )\n"
+            "    else:\n"
+            "        REVIEWER = 'AUTOMATED_SYNTHETIC_FIXTURE'\n"
+            "        MODEL_REASON = (\n"
+            "            '합성 제조 TTS rank 1 자동 선택. 기능 검증 전용이며 실제 제조 '\n"
+            "            '모델 선정 또는 사람 검토 증거가 아님.'\n"
+            "        )\n"
             "    extra_selection_args = ['--automated-proxy']\n"
             "else:\n"
             "    SELECTED_MODEL = 'small'  # 비교표를 보고 수정\n"
@@ -223,8 +258,8 @@ def build() -> Path:
         ),
         nbf.v4.new_markdown_cell(
             "## 7. 선택 모델 LoRA\n\n"
-            "공개 프록시는 40개 train 샘플·30 step의 짧은 실행으로 학습 코드, checkpoint, "
-            "Base/LoRA 비교 산출물을 검증합니다. 실제 제조 모드는 별도 설정의 500 step을 "
+            "공개·합성 모드는 작은 train split과 30 step의 짧은 실행으로 학습 코드, "
+            "checkpoint, Base/LoRA 비교 산출물을 검증합니다. 실제 제조 모드는 500 step을 "
             "사용하며 데이터 규모에 맞춰 조정합니다."
         ),
         nbf.v4.new_code_cell(
@@ -247,17 +282,23 @@ def build() -> Path:
         ),
         nbf.v4.new_markdown_cell(
             "## 9. 양자화 선택\n\n"
-            "공개 프록시는 종합 rank 1을 자동 선택합니다. 실제 제조 모드는 정확도 손실, RTF, "
-            "GPU 메모리와 모델 용량을 사람이 함께 검토합니다."
+            "공개·합성 모드는 종합 rank 1을 자동 선택합니다. 실제 제조 모드는 정확도 손실, "
+            "RTF, GPU 메모리와 모델 용량을 사람이 함께 검토합니다."
         ),
         nbf.v4.new_code_cell(
-            "if IS_PUBLIC_PROXY:\n"
+            "if IS_AUTOMATED_PROXY:\n"
             "    selected_quantization_row = best_completed_member(quantization_table)\n"
             "    SELECTED_VARIANT = str(selected_quantization_row['member_id'])\n"
-            "    QUANTIZATION_REASON = (\n"
-            "        '공개 Zeroth 프록시 종합 rank 1 자동 선택. 양자화 코드·산출물 smoke test '\n"
-            "        '전용이며 실제 배포 결정 또는 사람 검토 증거가 아님.'\n"
-            "    )\n"
+            "    if IS_PUBLIC_PROXY:\n"
+            "        QUANTIZATION_REASON = (\n"
+            "            '공개 Zeroth 프록시 종합 rank 1 자동 선택. 양자화 코드·산출물 '\n"
+            "            'smoke test 전용이며 실제 배포 결정 또는 사람 검토 증거가 아님.'\n"
+            "        )\n"
+            "    else:\n"
+            "        QUANTIZATION_REASON = (\n"
+            "            '합성 제조 TTS 종합 rank 1 자동 선택. 기능 검증 전용이며 실제 '\n"
+            "            '배포 결정 또는 사람 검토 증거가 아님.'\n"
+            "        )\n"
             "    extra_quantization_args = ['--automated-proxy']\n"
             "else:\n"
             "    SELECTED_VARIANT = 'float16'  # 비교표를 보고 수정\n"
@@ -288,8 +329,8 @@ def build() -> Path:
         ),
         nbf.v4.new_markdown_cell(
             "## 11. 산출물·심사 준비도 확인\n\n"
-            "공개 프록시에서는 `not_ready`가 정상입니다. 공개 데이터, 자동 선택, 미완료 사람 "
-            "서명은 제조 심사 증거를 대체하지 못합니다."
+            "공개·합성 모드에서는 `not_ready`가 정상입니다. 공개·합성 데이터, 자동 선택, "
+            "미완료 사람 서명은 제조 심사 증거를 대체하지 못합니다."
         ),
         nbf.v4.new_code_cell(
             "readiness_dir = (\n"
@@ -329,7 +370,7 @@ def build() -> Path:
             "    {'artifact': name, 'exists': path.exists(), 'path': str(path)}\n"
             "    for name, path in expected_outputs.items()\n"
             "]))\n\n"
-            "if IS_PUBLIC_PROXY:\n"
+            "if IS_AUTOMATED_PROXY:\n"
             "    print(\n"
             "        '다음 단계: DATA_MODE을 PRIVATE_MANUFACTURING으로 바꾸고 승인된 제조 '\n"
             "        '녹음·정답 전사를 넣은 뒤 같은 순서를 다시 실행합니다.'\n"

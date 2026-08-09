@@ -1,0 +1,32 @@
+{
+  "dataset_id": "synthetic-manufacturing-korean-asr-v1",
+  "generated_on": "2026-08-10",
+  "generator": "scripts/generate_synthetic_manufacturing_dataset.py",
+  "human_voice_data": false,
+  "contains_personal_information": false,
+  "tts_engine": "Windows System.Speech.Synthesis.SpeechSynthesizer",
+  "tts_voice": "Microsoft Heami Desktop",
+  "sample_rate_hz": 16000,
+  "sample_count": 30,
+  "split_counts": {
+    "train": 18,
+    "validation": 6,
+    "test": 6
+  },
+  "speaker_definition": "Synthetic rate variants of one installed Korean TTS voice; not real speakers",
+  "noise_profiles": [
+    "quiet_tts",
+    "fan_noise_snr24db",
+    "equipment_hum_snr18db"
+  ],
+  "intended_use": "ASR pipeline, reporting, and artifact-contract functional testing",
+  "prohibited_claims": [
+    "real manufacturing ASR accuracy",
+    "human speaker generalization",
+    "production readiness",
+    "human transcript review completion"
+  ],
+  "licensing_note": "Generated locally from project-authored phrases with an installed Microsoft Windows voice. Confirm applicable Microsoft terms before redistribution outside this project.",
+  "documentation": "https://learn.microsoft.com/dotnet/api/system.speech.synthesis.speechsynthesizer",
+  "integrity": "SHA-256 per file is recorded in manifest.csv"
+}

@@ -3,8 +3,9 @@
 - `colab_runner.ipynb`: 공개 데이터 Baseline과 Whisper LoRA 데모
 - `colab_model_benchmark_quantization.ipynb`: Whisper 모델 크기 비교, 모델 선택,
   FP16·INT8-FP16 양자화 비교, 양자화 선택, 고정 Test 최종평가
-- `colab_manufacturing_assessment.ipynb`: 승인된 실제 제조 데이터가 준비된 뒤 엄격한
-  거버넌스 검증, 모델 비교, 선택 모델 LoRA, 양자화, 고정 Test와 심사 준비도 점검
+- `colab_manufacturing_assessment.ipynb`: 공개 프록시, 합성 제조 TTS 또는 승인된 실제
+  제조 데이터를 선택해 거버넌스 검증, 모델 비교, 선택 모델 LoRA, 양자화, 고정 Test와
+  심사 준비도 점검
 
 모델 비교 노트북은 변환된 CTranslate2 모델을 Google Drive에 캐시합니다. 변환 전
 Hugging Face 원본 모델도 런타임 간 재사용하려면 첫 설정 셀의
