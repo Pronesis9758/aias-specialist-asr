@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -8,6 +9,79 @@ import nbformat as nbf
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "notebooks" / "colab_manufacturing_assessment.ipynb"
+
+
+def _line_comment(line: str) -> str:
+    """Return a concise Korean explanation for one notebook code line."""
+    stripped = line.strip()
+    if stripped.startswith("%pip uninstall"):
+        return "Colab 기본 패키지 중 충돌 가능성이 있는 항목을 제거합니다."
+    if stripped.startswith("%pip install"):
+        return "프로젝트와 학습용 의존성을 현재 Colab 런타임에 설치합니다."
+    if stripped == "!nvidia-smi":
+        return "할당된 GPU 종류와 메모리 상태를 확인합니다."
+    if stripped.startswith("from ") and " import " in stripped:
+        module = stripped.split(" import ", 1)[0].removeprefix("from ")
+        return f"{module} 모듈에서 필요한 기능을 불러옵니다."
+    if stripped.startswith("import "):
+        module = stripped.removeprefix("import ").split(" as ", 1)[0]
+        return f"{module} 모듈을 불러옵니다."
+    if stripped.startswith("def "):
+        function_name = stripped.split("def ", 1)[1].split("(", 1)[0]
+        return f"{function_name} 재사용 함수를 정의합니다."
+    if stripped.startswith("if "):
+        return "해당 조건이 참인지 검사합니다."
+    if stripped.startswith("elif "):
+        return "앞 조건이 거짓일 때 다음 조건을 검사합니다."
+    if stripped == "else:":
+        return "앞선 조건에 해당하지 않는 경우를 처리합니다."
+    if stripped.startswith("for "):
+        return "각 항목을 순회하며 같은 처리를 반복합니다."
+    if stripped.startswith("raise "):
+        return "필수 조건을 만족하지 않으면 명확한 오류로 실행을 중단합니다."
+    if stripped.startswith("return "):
+        return "계산하거나 선택한 결과를 호출한 곳에 반환합니다."
+    if stripped.startswith("print("):
+        return "진행 상태 또는 선택 결과를 실행 로그에 출력합니다."
+    if stripped.startswith("display("):
+        return "결과를 Colab 표 형태로 표시합니다."
+    if stripped.startswith("run_aias("):
+        return "프로젝트 CLI 명령을 재현 가능한 방식으로 실행합니다."
+    if stripped.startswith("subprocess.run("):
+        return "외부 명령을 실행하고 실패하면 즉시 예외를 발생시킵니다."
+    if stripped.startswith("os.chdir("):
+        return "이후 상대 경로가 저장소를 기준으로 동작하도록 작업 폴더를 바꿉니다."
+    if stripped.startswith("drive.mount("):
+        return "모델 캐시와 실험 산출물을 보존할 Google Drive를 연결합니다."
+    if stripped.startswith((")", "]", "}")):
+        return "앞에서 시작한 코드 구문을 닫습니다."
+    if stripped.startswith(("[", "{")):
+        return "여러 값으로 구성된 자료 구조를 시작합니다."
+    if stripped.startswith("#"):
+        return ""
+    assignment = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\s*=", stripped)
+    if assignment:
+        return f"{assignment.group(1)} 변수에 이후 단계에서 사용할 값을 저장합니다."
+    if re.match(r"[\"'][^\"']+[\"']\s*:", stripped):
+        return "현재 실행 모드의 설정 항목을 정의합니다."
+    if stripped.startswith("(") or stripped.endswith(","):
+        return "위 함수 호출이나 자료 구조에 필요한 값을 전달합니다."
+    return "이 단계에 필요한 코드 구문을 실행합니다."
+
+
+def _annotate_code(source: str) -> str:
+    """Add a Korean explanation immediately before every non-comment code line."""
+    annotated: list[str] = []
+    for line in source.splitlines():
+        if not line.strip():
+            annotated.append(line)
+            continue
+        comment = _line_comment(line)
+        if comment:
+            indentation = line[: len(line) - len(line.lstrip())]
+            annotated.append(f"{indentation}# {comment}")
+        annotated.append(line)
+    return "\n".join(annotated)
 
 
 def build() -> Path:
@@ -404,6 +478,11 @@ def build() -> Path:
         [sys.executable, "-m", "ruff", "format", str(OUTPUT)],
         check=True,
     )
+    formatted_notebook = nbf.read(OUTPUT, as_version=4)
+    for cell in formatted_notebook.cells:
+        if cell.cell_type == "code":
+            cell.source = _annotate_code(cell.source)
+    nbf.write(formatted_notebook, OUTPUT)
     return OUTPUT
 
 
