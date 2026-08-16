@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import nbformat
@@ -32,6 +33,8 @@ def test_colab_code_lines_have_korean_explanatory_comments() -> None:
         lines = cell.source.splitlines()
         for index, line in enumerate(lines):
             if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            if re.fullmatch(r"[)\]}]+,?", line.strip()):
                 continue
             assert index > 0, f"code line has no explanation: {line}"
             comment = lines[index - 1].lstrip()
@@ -83,3 +86,25 @@ def test_colab_comments_do_not_use_old_broad_boilerplate() -> None:
     assert "# 현재 실행 모드의 설정 항목을 정의합니다." not in comments
     assert "# 이 단계에 필요한 코드 구문을 실행합니다." not in comments
     assert "# 진행 상태 또는 선택 결과를 실행 로그에 출력합니다." not in comments
+    assert not any("바로 위 함수·목록·사전 구문" in comment for comment in comments)
+    assert not any("이 줄의 연산 결과" in comment for comment in comments)
+    assert not any("앞에서 시작한 코드 구문" in comment for comment in comments)
+    assert not any("여러 값으로 구성된 자료 구조" in comment for comment in comments)
+    assert not any("변수에 이 연구 단계에서 계산하거나 선택" in comment for comment in comments)
+
+
+def test_colab_drive_mount_is_idempotent_and_explains_popup_failure() -> None:
+    notebook = nbformat.read(NOTEBOOK, as_version=4)
+    drive_cell = next(
+        cell.source
+        for cell in notebook.cells
+        if cell.cell_type == "code" and "drive.mount(" in cell.source
+    )
+
+    assert 'DRIVE_MY_DRIVE = DRIVE_MOUNT_POINT / "MyDrive"' in drive_cell
+    assert "if DRIVE_MY_DRIVE.is_dir():" in drive_cell
+    assert "Google Drive already mounted" in drive_cell
+    assert "except ValueError as exc:" in drive_cell
+    assert "accounts.google.com 화면이 검게" in drive_cell
+    assert "일반 Chrome" in drive_cell
+    assert "if not DRIVE_MY_DRIVE.is_dir():" in drive_cell

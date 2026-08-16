@@ -11,7 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "notebooks" / "colab_manufacturing_assessment.ipynb"
 
 
-def _line_comment(line: str, next_code: str = "") -> str:
+def _line_comment(
+    line: str,
+    next_code: str = "",
+    future_code: tuple[str, ...] = (),
+) -> str:
     """Return a concise, value-aware Korean explanation for one notebook code line."""
     stripped = line.strip()
     exact_comments = {
@@ -29,6 +33,15 @@ def _line_comment(line: str, next_code: str = "") -> str:
         ),
         'DRIVE_ROOT = "/content/drive/MyDrive/AI_Specialist_ASR_Project"': (
             "모델·결과·보고서를 보존할 내 Google Drive 경로입니다. 런타임 종료 후에도 유지됩니다."
+        ),
+        'DRIVE_MOUNT_POINT = Path("/content/drive")': (
+            "Colab 런타임에서 Google Drive를 연결할 기준 폴더를 지정합니다."
+        ),
+        'DRIVE_MY_DRIVE = DRIVE_MOUNT_POINT / "MyDrive"': (
+            "Drive 연결 성공 여부를 판별할 내 드라이브 폴더 경로를 지정합니다."
+        ),
+        "MODE_SETTINGS = {": (
+            "데이터 출처별 설정·모델 후보·양자화 명세·실험 ID를 하나의 표로 정의합니다."
         ),
         '"PUBLIC_PROXY": {': (
             "공개 Zeroth 한국어 음성으로 전체 파이프라인만 검증하는 프록시 모드를 정의합니다."
@@ -63,15 +76,11 @@ def _line_comment(line: str, next_code: str = "") -> str:
         (
             '"quantization": "configs/quantization/'
             'synthetic_manufacturing_whisper_quantization.yaml",'
-        ): (
-            "합성 제조 선택 모델의 float16·int8-float16 비교 조건을 지정합니다."
-        ),
+        ): ("합성 제조 선택 모델의 float16·int8-float16 비교 조건을 지정합니다."),
         (
             '"quantization": "configs/quantization/'
             'manufacturing_whisper_quantization_template.yaml",'
-        ): (
-            "실제 제조 선택 모델에 적용할 양자화 후보와 허용 손실 조건을 지정합니다."
-        ),
+        ): ("실제 제조 선택 모델에 적용할 양자화 후보와 허용 손실 조건을 지정합니다."),
         '"benchmark_id": "public-proxy-whisper-model-benchmark-v1",': (
             "공개 프록시 모델 비교 산출물을 모을 고유 실험 ID를 지정합니다."
         ),
@@ -198,13 +207,196 @@ def _line_comment(line: str, next_code: str = "") -> str:
         (
             'readiness = json.loads((readiness_dir / "assessment_readiness.json")'
             '.read_text(encoding="utf-8"))'
-        ): (
-            "심사 항목별 통과·대기·실패 상태가 담긴 JSON 결과를 읽습니다."
-        ),
+        ): ("심사 항목별 통과·대기·실패 상태가 담긴 JSON 결과를 읽습니다."),
         "expected_outputs = {": "최종 확인할 필수 표·보고서·선택 기록·백데이터 목록을 정의합니다.",
     }
     if stripped in exact_comments:
         return exact_comments[stripped]
+
+    semantic_comments = {
+        '"git",': "운영체제에 설치된 Git 실행 파일을 호출합니다.",
+        '"clone",': "원격 저장소를 Colab 임시 디스크로 복제하는 clone 명령을 선택합니다.",
+        '"--branch",': "전체 브랜치 중 실행할 특정 브랜치를 지정하는 옵션입니다.",
+        "GITHUB_BRANCH,": "앞에서 지정한 벤치마크·양자화 작업 브랜치 이름을 전달합니다.",
+        '"--single-branch",': "선택 브랜치 이력만 받아 다운로드 시간과 디스크 사용량을 줄입니다.",
+        "GITHUB_REPO_URL,": "복제 원본인 AIAS GitHub 저장소 주소를 전달합니다.",
+        "PROJECT_DIR,": "저장소를 복제하거나 Git 명령을 실행할 Colab 로컬 경로를 전달합니다.",
+        '"-C",': "현재 셸 위치를 바꾸지 않고 지정 저장소에서 Git을 실행하는 옵션입니다.",
+        '"merge",': "원격 브랜치의 최신 커밋을 현재 체크아웃에 반영합니다.",
+        '"--ff-only",': "로컬 변경과 충돌하면 새 merge commit을 만들지 않고 안전하게 실패시킵니다.",
+        'f"origin/{GITHUB_BRANCH}",': "동기화할 origin 원격 브랜치 이름을 구성합니다.",
+        '["git", "-C", PROJECT_DIR, "fetch", "origin", GITHUB_BRANCH],': (
+            "프로젝트 폴더의 origin에서 선택 브랜치 최신 이력만 가져오는 Git 명령을 구성합니다."
+        ),
+        '["git", "-C", PROJECT_DIR, "checkout", GITHUB_BRANCH],': (
+            "프로젝트 폴더에서 지정 작업 브랜치로 전환하는 Git 명령을 구성합니다."
+        ),
+        "check=True,": "Git·CLI 명령이 실패하면 다음 셀로 진행하지 않고 즉시 예외를 발생시킵니다.",
+        "sys.path.insert(0, PROJECT_SRC)": (
+            "방금 설치한 저장소의 src를 Python 검색 경로 최우선 순위에 추가합니다."
+        ),
+        'print("aias_specialist import OK:", PROJECT_SRC)': (
+            "실제로 import되는 프로젝트 소스 경로를 확인 로그로 출력합니다."
+        ),
+        'print("\\nRunning:", " ".join(command), flush=True)': (
+            "실행할 AIAS 명령 전체를 즉시 출력해 장시간 작업의 시작점을 보여줍니다."
+        ),
+        "subprocess.run(command, check=True, env=environment)": (
+            "로그 즉시 출력 환경으로 AIAS 명령을 실행하고 실패 시 파이프라인을 중단합니다."
+        ),
+        'print("Google Drive already mounted at /content/drive")': (
+            "이 런타임은 이미 Drive에 연결됐으므로 추가 승인 없이 재사용한다고 알립니다."
+        ),
+        'print("Google Drive ready:", DRIVE_MY_DRIVE)': (
+            "검증을 통과한 내 드라이브 경로를 출력해 저장 준비 완료를 확인합니다."
+        ),
+        'run_aias("prepare-hf-dataset", "--config", CONFIG)': (
+            "공개 Zeroth 일부를 설정에 맞게 내려받고 manifest·출처 정보를 생성합니다."
+        ),
+        'print("PUBLIC PROXY: 제조 성능 증거가 아닌 전체동작 검증 데이터입니다.")': (
+            "공개 음성 결과를 제조 현장 성능으로 오해하지 않도록 사용 한계를 출력합니다."
+        ),
+        'synthetic_settings.paths.manifest, backend="faster_whisper"': (
+            "설정의 합성 manifest를 Faster-Whisper 입력 규칙으로 검증하도록 전달합니다."
+        ),
+        'print("SYNTHETIC: 실제 제조 성능이나 사람 검수 증거가 아닙니다.")': (
+            "합성 TTS 결과가 실제 제조·사람 검수 증거가 아님을 출력합니다."
+        ),
+        '"Google Drive 연결에 실패했습니다. accounts.google.com 화면이 검게 "': (
+            "인증 팝업 렌더링 실패의 대표 증상을 오류 안내 첫 문장에 포함합니다."
+        ),
+        '"멈추면 Codex 내장 브라우저 대신 일반 Chrome에서 이 노트북을 "': (
+            "문제가 반복될 때 사용할 정상 브라우저와 대상 노트북을 안내합니다."
+        ),
+        '"열고 팝업·리디렉션을 허용한 뒤 이 셀을 다시 실행하세요."': (
+            "Chrome에서 허용할 권한과 재실행할 단계를 안내합니다."
+        ),
+        ") from exc": "사용자 안내 오류에 Colab의 원래 마운트 실패 원인을 연결해 보존합니다.",
+        '(private_root / "audio").mkdir(parents=True, exist_ok=True)': (
+            "실제 녹음 WAV를 넣을 비공개 Drive 폴더를 상위 폴더와 함께 생성합니다."
+        ),
+        (
+            'Path("data/templates/manufacturing_manifest_template.csv"): '
+            'private_root / "manifest.csv",'
+        ): ("음성 경로·정답·split·출처를 작성할 manifest CSV 양식을 비공개 폴더에 배치합니다."),
+        (
+            'Path("data/templates/data_approval_template.yaml"): '
+            'private_root / "data_approval.yaml",'
+        ): ("데이터 사용 승인·동의·비식별화 상태를 기록할 YAML 양식을 배치합니다."),
+        'Path("data/templates/human_review_signoff_template.yaml"): private_root': (
+            "모델·용어·결과의 사람 검토 서명 양식 원본과 비공개 대상 폴더를 연결합니다."
+        ),
+        '/ "human_review_signoff.yaml",': (
+            "사람 검토 완료 여부를 기록할 대상 파일명을 human_review_signoff.yaml로 지정합니다."
+        ),
+        'Path("configs/assessment/acceptance_criteria_template.yaml"): private_root': (
+            "정확도·속도·메모리 합격기준 양식 원본과 비공개 대상 폴더를 연결합니다."
+        ),
+        '/ "acceptance_criteria.yaml",': (
+            "과제 합격기준을 작성할 대상 파일명을 acceptance_criteria.yaml로 지정합니다."
+        ),
+        "shutil.copy2(source, destination)": (
+            "원본 양식의 메타데이터를 보존해 비공개 Drive 대상 경로로 복사합니다."
+        ),
+        'print("Created:", destination)': "이번 실행에서 새로 만든 입력 양식 경로를 출력합니다.",
+        'print("Preserved existing:", destination)': (
+            "기존 작성 내용을 덮어쓰지 않고 유지한 파일 경로를 출력합니다."
+        ),
+        'f"{DRIVE_ROOT}/reports/assessment_readiness/private_manufacturing",': (
+            "실제 제조 입력 준비 상태 점검표를 저장할 Drive 경로를 전달합니다."
+        ),
+        'run_aias("model-matrix-lock", "--matrix", MODEL_MATRIX)': (
+            "모든 Whisper 후보의 Hugging Face revision을 해시로 고정해 재현성을 확보합니다."
+        ),
+        'run_aias("benchmark-models", "--matrix", MODEL_MATRIX)': (
+            "고정된 후보들을 같은 validation split에서 정확도·속도·메모리로 비교합니다."
+        ),
+        'completed["rank"] = pd.to_numeric(completed["rank"], errors="coerce")': (
+            "문자열이나 결측값이 섞인 rank 열을 안전한 숫자형으로 변환합니다."
+        ),
+        '["rank", "cer", "wer", "aggregate_real_time_factor"],': (
+            "종합순위, 글자·단어 오류율, 실시간 처리속도 순으로 후보를 정렬합니다."
+        ),
+        ").iloc[0]": "정렬 결과의 첫 행, 즉 최우선 완료 후보 하나를 반환합니다.",
+        '"select-model",': "검토한 Whisper 모델을 공식 선택 기록으로 저장하는 명령입니다.",
+        '"--benchmark-dir",': "후보 비교표와 실행 근거가 있는 벤치마크 폴더 옵션입니다.",
+        "str(benchmark_dir),": "현재 모드의 벤치마크 산출물 폴더 경로를 전달합니다.",
+        '"--model-id",': "최종 선택할 Whisper 후보 ID를 지정하는 옵션입니다.",
+        "SELECTED_MODEL,": "자동 순위 또는 사람 검토로 선택한 모델 ID를 전달합니다.",
+        '"--reviewer",': "선택을 수행한 자동 절차 또는 사람 검토자를 기록하는 옵션입니다.",
+        "REVIEWER,": "현재 선택의 검토자 식별값을 감사 기록에 전달합니다.",
+        '"--reason",': "정확도·속도·메모리와 데이터 한계를 선택 근거로 기록하는 옵션입니다.",
+        "MODEL_REASON,": "Whisper 모델을 선택한 구체적 판단 근거를 전달합니다.",
+        "*extra_selection_args,": (
+            "공개·합성 자동 결과인 경우 사람 검토가 아니라는 표시 인자를 펼쳐 전달합니다."
+        ),
+        'print(model_selection.read_text(encoding="utf-8"))': (
+            "저장된 모델 ID·revision·성능·검토자·선택 사유를 화면에서 확인합니다."
+        ),
+        '"train-selected-whisper",': "선택된 Whisper에 LoRA를 적용하는 학습 명령입니다.",
+        '"--selection",': "앞 단계의 선택 YAML을 입력으로 받는 옵션입니다.",
+        "str(model_selection),": (
+            "모델·revision·실행 조건이 고정된 model_selection.yaml을 전달합니다."
+        ),
+        '"--config",': "데이터 경로·split·학습·평가 조건 YAML을 지정하는 옵션입니다.",
+        "CONFIG,": "현재 데이터 모드에 대응하는 핵심 설정 YAML 경로를 전달합니다.",
+        '"quantization-sweep",': "선택 모델의 여러 정밀도를 비교 평가하는 양자화 명령입니다.",
+        '"--spec",': "양자화 후보·캐시·평가 기준 YAML을 지정하는 옵션입니다.",
+        "QUANTIZATION_SPEC,": "현재 모드의 float16·int8 비교 명세 경로를 전달합니다.",
+        '"select-quantization",': "검토한 양자화 variant를 공식 선택 기록으로 저장하는 명령입니다.",
+        '"--quantization-dir",': "양자화 비교표와 실행 근거가 있는 폴더 옵션입니다.",
+        "str(quantization_dir),": "현재 모드의 양자화 비교 산출물 폴더를 전달합니다.",
+        '"--variant-id",': "최종 선택할 정밀도 variant ID를 지정하는 옵션입니다.",
+        "SELECTED_VARIANT,": "자동 순위 또는 사람 검토로 선택한 양자화 ID를 전달합니다.",
+        "QUANTIZATION_REASON,": "정확도 손실·속도·메모리·용량을 고려한 선택 근거를 전달합니다.",
+        "*extra_quantization_args,": (
+            "공개·합성 자동 결과인 경우 배포 결정이 아니라는 표시 인자를 펼쳐 전달합니다."
+        ),
+        'print(quantization_selection.read_text(encoding="utf-8"))': (
+            "저장된 variant·성능·검토자·선택 사유를 화면에서 확인합니다."
+        ),
+        '"finalize-evaluation",': "선택 완료 후 미사용 Test split을 평가하는 최종 명령입니다.",
+        "str(quantization_selection),": (
+            "선택 모델과 정밀도가 고정된 quantization_selection.yaml을 전달합니다."
+        ),
+        '"assessment-audit",': "심사 증거의 완성도와 차단 항목을 검사하는 감사 명령입니다.",
+        '"--output-dir",': "감사 결과 JSON과 Markdown을 저장할 폴더 옵션입니다.",
+        "str(readiness_dir),": "현재 모드의 심사 준비도 보고서 폴더를 전달합니다.",
+        (
+            'pd.DataFrame(readiness["checks"])[['
+            '"criterion", "check_id", "status", "message", "evidence"]]'
+        ): ("심사기준·검사항목·상태·설명·증거 경로 열만 선택해 검토표를 만듭니다."),
+        "pd.DataFrame(": "산출물 존재 여부 목록을 Colab에서 읽기 쉬운 표로 변환합니다.",
+        '{"artifact": name, "exists": path.exists(), "path": str(path)}': (
+            "각 산출물의 이름·존재 여부·실제 저장 경로를 한 행으로 구성합니다."
+        ),
+        '"다음 단계: DATA_MODE을 PRIVATE_MANUFACTURING으로 바꾸고 승인된 제조 "': (
+            "기능 검증 다음에는 실행 모드를 실제 제조 데이터로 바꾸라고 안내합니다."
+        ),
+        '"녹음·정답 전사를 넣은 뒤 같은 순서를 다시 실행합니다."': (
+            "승인된 녹음·정답으로 동일 파이프라인을 재실행하라는 절차를 완성합니다."
+        ),
+        '"최종 보고서와 오류 샘플을 사람이 검수하고 human_review_signoff.yaml을 "': (
+            "실제 제조 결과의 보고서·오류 샘플·사람 검토 서명을 요구합니다."
+        ),
+        '"완료한 뒤 assessment-audit --fail-on-blocker로 최종 확인하세요."': (
+            "서명 후 차단 항목이 남으면 실패하는 최종 감사 명령을 안내합니다."
+        ),
+        "display(benchmark_table)": (
+            "Whisper 후보별 CER·WER·RTF·메모리·용량·종합순위를 표로 표시합니다."
+        ),
+        "display(quantization_table)": (
+            "정밀도별 정확도 변화·속도·메모리·용량·종합순위를 표로 표시합니다."
+        ),
+        'display(synthetic_manifest.groupby(["split", "noise_condition"]).size())': (
+            "train·validation·test와 소음 조건별 합성 음성 개수를 표로 확인합니다."
+        ),
+        'display(json.loads(provenance_path.read_text(encoding="utf-8")))': (
+            "데이터 출처·생성기·개인정보 여부·용도 제한 정보를 화면에 표시합니다."
+        ),
+    }
+    if stripped in semantic_comments:
+        return semantic_comments[stripped]
 
     path_key_comments = {
         '"benchmark_table"': "Whisper 모델 후보 비교 CSV 경로를 등록합니다.",
@@ -237,6 +429,18 @@ def _line_comment(line: str, next_code: str = "") -> str:
             '"assessment-audit",': "문서·데이터·실험·거버넌스·사람 검토 증거를 종합 점검합니다.",
         }
         return command_comments.get(next_code, "프로젝트 CLI의 지정된 연구 단계를 실행합니다.")
+
+    if stripped == "subprocess.run(":
+        nearby = " ".join(future_code[:14])
+        if '"clone",' in nearby:
+            return "지정 브랜치의 GitHub 저장소를 Colab 임시 경로에 처음 복제합니다."
+        if '"fetch"' in nearby:
+            return "이미 복제된 저장소에서 원격 브랜치의 최신 커밋 정보를 가져옵니다."
+        if '"checkout"' in nearby:
+            return "기존 저장소의 작업 브랜치를 노트북이 요구하는 브랜치로 전환합니다."
+        if '"merge",' in nearby:
+            return "원격 최신 커밋을 fast-forward 방식으로 로컬 코드에 반영합니다."
+        return "외부 명령을 실행하고 성공 여부를 확인합니다."
 
     if stripped.startswith("%pip uninstall"):
         return "Colab 기본 패키지 중 충돌 가능성이 있는 항목을 제거합니다."
@@ -276,6 +480,12 @@ def _line_comment(line: str, next_code: str = "") -> str:
         "if not os.path.exists(PROJECT_DIR):": (
             "Colab 임시 디스크에 저장소가 아직 없는지 확인합니다."
         ),
+        "if DRIVE_MY_DRIVE.is_dir():": (
+            "내 드라이브 폴더가 이미 보이면 추가 승인 없이 기존 연결을 재사용합니다."
+        ),
+        "if not DRIVE_MY_DRIVE.is_dir():": (
+            "승인 이후에도 내 드라이브 폴더가 없으면 연결 실패로 처리합니다."
+        ),
     }
     if stripped in condition_comments:
         return condition_comments[stripped]
@@ -284,7 +494,24 @@ def _line_comment(line: str, next_code: str = "") -> str:
     if stripped.startswith("elif "):
         return "앞 모드가 아닐 때 이 줄의 다음 데이터 모드 조건을 검사합니다."
     if stripped == "else:":
-        return "앞선 조건에 해당하지 않는 경우를 처리합니다."
+        nearby = " ".join(future_code[:12])
+        if "drive.mount" in nearby:
+            return "기존 Drive 연결이 없으므로 새 인증과 마운트를 시도합니다."
+        if "private_root = Path(PRIVATE_ROOT)" in nearby:
+            return "공개·합성 모드가 아니므로 실제 제조 데이터 입력 양식을 준비합니다."
+        if 'SELECTED_MODEL = "small"' in nearby:
+            return "실제 제조 모드이므로 자동 순위 대신 사람이 모델을 검토하고 입력합니다."
+        if 'SELECTED_VARIANT = "float16"' in nearby:
+            return "실제 제조 모드이므로 사람이 양자화 손실과 자원 절감을 검토합니다."
+        if '"fetch"' in nearby:
+            return "저장소가 이미 있으므로 재복제하지 않고 원격 최신 코드와 동기화합니다."
+        if "Preserved existing" in nearby:
+            return "대상 양식이 이미 있으므로 사용자가 작성한 기존 파일을 그대로 보존합니다."
+        if "AUTOMATED_SYNTHETIC_FIXTURE" in nearby:
+            return "공개 프록시가 아니므로 합성 제조 자동 선택임을 별도로 기록합니다."
+        if "human_review_signoff.yaml" in nearby:
+            return "실제 제조 모드의 최종 사람 검수와 서명 완료 절차를 안내합니다."
+        return "앞 조건이 거짓이므로 이 코드 블록에 정의된 대체 절차를 실행합니다."
     if stripped.startswith("for "):
         return "각 항목을 순회하며 같은 처리를 반복합니다."
     if stripped.startswith("raise "):
@@ -304,19 +531,33 @@ def _line_comment(line: str, next_code: str = "") -> str:
             return "사용자가 확인할 수 있도록 현재 데이터 모드를 출력합니다."
         if "Config:" in stripped:
             return "현재 모드가 사용하는 핵심 YAML 설정 경로를 출력합니다."
+        if stripped == "print(":
+            if "PRIVATE_MANUFACTURING" in next_code:
+                return "기능 검증 완료 후 실제 제조 데이터 모드로 전환하는 다음 단계를 출력합니다."
+            if "human_review_signoff.yaml" in " ".join(future_code[:5]):
+                return "실제 제조 결과의 사람 검수·서명·최종 감사 절차를 출력합니다."
         return "해당 단계의 상태·선택 근거·안내 문구를 실행 로그에 출력합니다."
     if stripped.startswith("display("):
         return "결과를 Colab 표 형태로 표시합니다."
-    if stripped.startswith("subprocess.run("):
-        return "외부 명령을 실행하고 실패하면 즉시 예외를 발생시킵니다."
     if stripped.startswith("os.chdir("):
         return "이후 상대 경로가 저장소를 기준으로 동작하도록 작업 폴더를 바꿉니다."
     if stripped.startswith("drive.mount("):
-        return "모델 캐시와 실험 산출물을 보존할 Google Drive를 연결합니다."
+        return "새 런타임에 모델·산출물을 보존할 Google Drive 접근 승인을 요청합니다."
+    if stripped == "try:":
+        return "Google Drive 인증 실패를 사용자가 이해할 수 있는 안내로 변환합니다."
+    if stripped.startswith("except ValueError as exc:"):
+        return "Colab의 Drive 마운트 실패 예외를 잡아 브라우저 해결 방법을 안내합니다."
     if stripped.startswith((")", "]", "}")):
-        return "앞에서 시작한 코드 구문을 닫습니다."
-    if stripped.startswith(("[", "{")):
-        return "여러 값으로 구성된 자료 구조를 시작합니다."
+        return ""
+    if stripped == "[":
+        if '"clone",' in future_code[:8]:
+            return "Git clone 실행 파일·하위 명령·옵션·원본·대상 순서로 명령 목록을 구성합니다."
+        nearby = " ".join(future_code[:10])
+        if '"merge",' in nearby:
+            return "Git 저장소 위치·merge 방식·원격 브랜치를 순서대로 명령 목록에 담습니다."
+        if '"artifact"' in nearby:
+            return "필수 산출물마다 존재 여부와 경로를 계산할 행 목록을 시작합니다."
+        return "순서가 중요한 입력값들을 묶는 목록을 시작합니다."
     if stripped.startswith("#"):
         return ""
     assignment_comments = {
@@ -343,8 +584,8 @@ def _line_comment(line: str, next_code: str = "") -> str:
     if "자동 선택" in stripped or "사람 검토" in stripped:
         return "자동 프록시 결과의 범위와 사람 검토가 아님을 선택 근거에 명시합니다."
     if stripped.startswith("(") or stripped.endswith(","):
-        return "바로 위 함수·목록·사전 구문에 이 줄의 구체적인 값 또는 인자를 전달합니다."
-    return "이 줄의 연산 결과를 현재 데이터 준비·평가·선택 단계에 적용합니다."
+        return "이 줄의 값을 바로 위에서 설명한 연구 단계의 입력으로 사용합니다."
+    return "이 연산으로 현재 데이터 준비·평가·선택 단계의 상태를 갱신합니다."
 
 
 def _annotate_code(source: str) -> str:
@@ -363,7 +604,12 @@ def _annotate_code(source: str) -> str:
             ),
             "",
         )
-        comment = _line_comment(line, next_code)
+        future_code = tuple(
+            candidate.strip()
+            for candidate in lines[index + 1 :]
+            if candidate.strip() and not candidate.lstrip().startswith("#")
+        )
+        comment = _line_comment(line, next_code, future_code)
         if comment:
             indentation = line[: len(line) - len(line.lstrip())]
             annotated.append(f"{indentation}# {comment}")
@@ -451,7 +697,27 @@ def build() -> Path:
         ),
         nbf.v4.new_markdown_cell("## 1. GPU와 Google Drive 연결"),
         nbf.v4.new_code_cell(
-            '!nvidia-smi\nfrom google.colab import drive\n\ndrive.mount("/content/drive")'
+            "!nvidia-smi\n"
+            "from pathlib import Path\n"
+            "from google.colab import drive\n\n"
+            "DRIVE_MOUNT_POINT = Path('/content/drive')\n"
+            "DRIVE_MY_DRIVE = DRIVE_MOUNT_POINT / 'MyDrive'\n\n"
+            "if DRIVE_MY_DRIVE.is_dir():\n"
+            "    print('Google Drive already mounted at /content/drive')\n"
+            "else:\n"
+            "    try:\n"
+            "        drive.mount(str(DRIVE_MOUNT_POINT))\n"
+            "    except ValueError as exc:\n"
+            "        raise RuntimeError(\n"
+            "            'Google Drive 연결에 실패했습니다. accounts.google.com 화면이 검게 '\n"
+            "            '멈추면 Codex 내장 브라우저 대신 일반 Chrome에서 이 노트북을 '\n"
+            "            '열고 팝업·리디렉션을 허용한 뒤 이 셀을 다시 실행하세요.'\n"
+            "        ) from exc\n\n"
+            "if not DRIVE_MY_DRIVE.is_dir():\n"
+            "    raise RuntimeError(\n"
+            "        'Google Drive 승인이 완료됐지만 /content/drive/MyDrive를 찾을 수 없습니다.'\n"
+            "    )\n"
+            "print('Google Drive ready:', DRIVE_MY_DRIVE)"
         ),
         nbf.v4.new_markdown_cell("## 2. GitHub 코드 동기화"),
         nbf.v4.new_code_cell(
