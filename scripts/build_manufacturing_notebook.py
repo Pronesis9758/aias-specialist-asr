@@ -129,7 +129,14 @@ def build() -> Path:
         nbf.v4.new_code_cell(
             "%pip uninstall -y torchao gradio gradio-client\n"
             '%pip install -q -e ".[train]" "transformers>=4.46,<5" "peft>=0.14,<0.19"\n\n'
+            "from importlib.util import find_spec\n"
             "import sys\n\n"
+            "PROJECT_SRC = os.path.join(PROJECT_DIR, 'src')\n"
+            "if PROJECT_SRC not in sys.path:\n"
+            "    sys.path.insert(0, PROJECT_SRC)\n"
+            "if find_spec('aias_specialist') is None:\n"
+            "    raise ModuleNotFoundError('aias_specialist import path refresh failed')\n"
+            "print('aias_specialist import OK:', PROJECT_SRC)\n\n"
             "def run_aias(*args):\n"
             "    command = [sys.executable, '-m', 'aias_specialist.cli', *args]\n"
             '    print("\\nRunning:", " ".join(command), flush=True)\n'
@@ -382,6 +389,15 @@ def build() -> Path:
             "    )"
         ),
     ]
+    if OUTPUT.exists():
+        existing_notebook = nbf.read(OUTPUT, as_version=4)
+        if len(existing_notebook.cells) == len(notebook.cells):
+            for cell, existing_cell in zip(
+                notebook.cells, existing_notebook.cells, strict=True
+            ):
+                if "id" in existing_cell:
+                    cell["id"] = existing_cell["id"]
+
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     nbf.write(notebook, OUTPUT)
     subprocess.run(
