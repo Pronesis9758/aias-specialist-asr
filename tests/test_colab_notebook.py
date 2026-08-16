@@ -39,3 +39,47 @@ def test_colab_code_lines_have_korean_explanatory_comments() -> None:
             assert any("가" <= character <= "힣" for character in comment), (
                 f"explanation is not Korean: {comment}"
             )
+
+
+def test_colab_storage_path_comments_explain_persistence() -> None:
+    notebook = nbformat.read(NOTEBOOK, as_version=4)
+    mode_cell = next(
+        cell.source
+        for cell in notebook.cells
+        if cell.cell_type == "code" and 'PROJECT_DIR = "/content/AIAS"' in cell.source
+    )
+
+    assert "Colab 임시 경로" in mode_cell
+    assert "런타임 종료·초기화 시 삭제" in mode_cell
+    assert "내 Google Drive 경로" in mode_cell
+    assert "런타임 종료 후에도 유지" in mode_cell
+
+
+def test_colab_mode_comments_explain_each_distinct_purpose() -> None:
+    notebook = nbformat.read(NOTEBOOK, as_version=4)
+    mode_cell = next(
+        cell.source
+        for cell in notebook.cells
+        if cell.cell_type == "code" and '"PUBLIC_PROXY": {' in cell.source
+    )
+
+    assert "공개 Zeroth 한국어 음성으로 전체 파이프라인만 검증" in mode_cell
+    assert "제조 용어가 포함된 합성 TTS 30개로 기능을 검증" in mode_cell
+    assert "승인된 실제 제조 녹음과 사람 검수 전사" in mode_cell
+    assert "tiny·base·small 후보 목록" in mode_cell
+    assert "엄격한 거버넌스 조건" in mode_cell
+
+
+def test_colab_comments_do_not_use_old_broad_boilerplate() -> None:
+    notebook = nbformat.read(NOTEBOOK, as_version=4)
+    comments = {
+        line.strip()
+        for cell in notebook.cells
+        if cell.cell_type == "code"
+        for line in cell.source.splitlines()
+        if line.lstrip().startswith("#")
+    }
+
+    assert "# 현재 실행 모드의 설정 항목을 정의합니다." not in comments
+    assert "# 이 단계에 필요한 코드 구문을 실행합니다." not in comments
+    assert "# 진행 상태 또는 선택 결과를 실행 로그에 출력합니다." not in comments

@@ -11,9 +11,233 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "notebooks" / "colab_manufacturing_assessment.ipynb"
 
 
-def _line_comment(line: str) -> str:
-    """Return a concise Korean explanation for one notebook code line."""
+def _line_comment(line: str, next_code: str = "") -> str:
+    """Return a concise, value-aware Korean explanation for one notebook code line."""
     stripped = line.strip()
+    exact_comments = {
+        'DATA_MODE = "SYNTHETIC_MANUFACTURING"': (
+            "현재 실행을 합성 제조 TTS 데이터 모드로 선택합니다. 실제 데이터 사용 시 값을 바꿉니다."
+        ),
+        'GITHUB_REPO_URL = "https://github.com/Pronesis9758/aias-specialist-asr.git"': (
+            "Colab에서 복제할 ASR 프로젝트 GitHub 저장소 주소를 지정합니다."
+        ),
+        'GITHUB_BRANCH = "codex/whisper-benchmark-quantization"  # PR 병합 후 main': (
+            "벤치마크·양자화 기능이 있는 작업 브랜치를 선택합니다. PR 병합 후 main으로 바꿉니다."
+        ),
+        'PROJECT_DIR = "/content/AIAS"': (
+            "GitHub 코드를 복제할 Colab 임시 경로입니다. 런타임 종료·초기화 시 삭제됩니다."
+        ),
+        'DRIVE_ROOT = "/content/drive/MyDrive/AI_Specialist_ASR_Project"': (
+            "모델·결과·보고서를 보존할 내 Google Drive 경로입니다. 런타임 종료 후에도 유지됩니다."
+        ),
+        '"PUBLIC_PROXY": {': (
+            "공개 Zeroth 한국어 음성으로 전체 파이프라인만 검증하는 프록시 모드를 정의합니다."
+        ),
+        '"SYNTHETIC_MANUFACTURING": {': (
+            "제조 용어가 포함된 합성 TTS 30개로 기능을 검증하는 기본 실행 모드를 정의합니다."
+        ),
+        '"PRIVATE_MANUFACTURING": {': (
+            "승인된 실제 제조 녹음과 사람 검수 전사를 사용하는 최종 연구 모드를 정의합니다."
+        ),
+        '"config": "configs/public_proxy_assessment.yaml",': (
+            "공개 Zeroth 데이터·평가·Drive 산출물 경로가 담긴 설정 파일을 연결합니다."
+        ),
+        '"config": "configs/synthetic_manufacturing_sample.yaml",': (
+            "합성 제조 데이터 분할·학습·평가 조건이 담긴 설정 파일을 연결합니다."
+        ),
+        '"config": "configs/manufacturing_private_template.yaml",': (
+            "실제 제조 데이터 경로와 엄격한 거버넌스 조건을 입력할 템플릿을 연결합니다."
+        ),
+        '"matrix": "configs/benchmarks/public_proxy_whisper_models.yaml",': (
+            "공개 프록시에서 비교할 Whisper 후보와 실행 조건 목록을 지정합니다."
+        ),
+        '"matrix": "configs/benchmarks/synthetic_manufacturing_whisper_models.yaml",': (
+            "합성 제조 데이터에서 비교할 tiny·base·small 후보 목록을 지정합니다."
+        ),
+        '"matrix": "configs/benchmarks/manufacturing_whisper_models_template.yaml",': (
+            "실제 제조 데이터에서 사람이 검토할 확장 Whisper 후보 목록을 지정합니다."
+        ),
+        '"quantization": "configs/quantization/public_proxy_whisper_quantization.yaml",': (
+            "공개 프록시 모델에 적용할 float16·int8 양자화 비교 조건을 지정합니다."
+        ),
+        (
+            '"quantization": "configs/quantization/'
+            'synthetic_manufacturing_whisper_quantization.yaml",'
+        ): (
+            "합성 제조 선택 모델의 float16·int8-float16 비교 조건을 지정합니다."
+        ),
+        (
+            '"quantization": "configs/quantization/'
+            'manufacturing_whisper_quantization_template.yaml",'
+        ): (
+            "실제 제조 선택 모델에 적용할 양자화 후보와 허용 손실 조건을 지정합니다."
+        ),
+        '"benchmark_id": "public-proxy-whisper-model-benchmark-v1",': (
+            "공개 프록시 모델 비교 산출물을 모을 고유 실험 ID를 지정합니다."
+        ),
+        '"benchmark_id": "synthetic-manufacturing-whisper-model-benchmark-v1",': (
+            "합성 제조 모델 비교 산출물을 모을 고유 실험 ID를 지정합니다."
+        ),
+        '"benchmark_id": "manufacturing-whisper-model-benchmark-v1",': (
+            "실제 제조 모델 비교 산출물을 모을 고유 실험 ID를 지정합니다."
+        ),
+        '"quantization_id": "public-proxy-whisper-quantization-v1",': (
+            "공개 프록시 양자화 비교 산출물을 모을 고유 실험 ID를 지정합니다."
+        ),
+        '"quantization_id": "synthetic-manufacturing-whisper-quantization-v1",': (
+            "합성 제조 양자화 비교 산출물을 모을 고유 실험 ID를 지정합니다."
+        ),
+        '"quantization_id": "manufacturing-whisper-quantization-v1",': (
+            "실제 제조 양자화 비교 산출물을 모을 고유 실험 ID를 지정합니다."
+        ),
+        "mode = MODE_SETTINGS[DATA_MODE]": "선택한 데이터 모드의 설정 묶음만 꺼냅니다.",
+        'CONFIG = mode["config"]': "선택 모드의 데이터·학습·평가 설정 파일 경로를 사용합니다.",
+        'MODEL_MATRIX = mode["matrix"]': (
+            "선택 모드에서 비교할 Whisper 후보 목록 경로를 사용합니다."
+        ),
+        'QUANTIZATION_SPEC = mode["quantization"]': (
+            "선택 모델에 적용할 양자화 후보와 평가 조건 파일 경로를 사용합니다."
+        ),
+        'BENCHMARK_ID = mode["benchmark_id"]': "모델 비교 결과를 저장할 실험 그룹 ID를 사용합니다.",
+        'QUANTIZATION_ID = mode["quantization_id"]': (
+            "양자화 비교 결과를 저장할 실험 그룹 ID를 사용합니다."
+        ),
+        'PRIVATE_ROOT = f"{DRIVE_ROOT}/data/private/manufacturing"': (
+            "실제 제조 음성·정답·승인 문서를 둘 비공개 Drive 폴더를 지정합니다."
+        ),
+        'IS_PUBLIC_PROXY = DATA_MODE == "PUBLIC_PROXY"': (
+            "현재 실행이 공개 데이터 기능 검증 모드인지 표시합니다."
+        ),
+        'IS_SYNTHETIC_MANUFACTURING = DATA_MODE == "SYNTHETIC_MANUFACTURING"': (
+            "현재 실행이 합성 제조 데이터 기능 검증 모드인지 표시합니다."
+        ),
+        "IS_AUTOMATED_PROXY = IS_PUBLIC_PROXY or IS_SYNTHETIC_MANUFACTURING": (
+            "공개·합성 모드에서는 사람 결정 대신 자동 선택을 허용하도록 표시합니다."
+        ),
+        'PROJECT_SRC = os.path.join(PROJECT_DIR, "src")': (
+            "editable 설치 직후 프로젝트 패키지를 찾을 src 절대 경로를 계산합니다."
+        ),
+        'command = [sys.executable, "-m", "aias_specialist.cli", *args]': (
+            "현재 Python으로 AIAS CLI와 전달받은 세부 명령을 실행할 명령 배열을 만듭니다."
+        ),
+        'environment = {**os.environ, "PYTHONUNBUFFERED": "1"}': (
+            "학습·평가 진행 로그가 지연 없이 Colab에 표시되도록 실행 환경을 만듭니다."
+        ),
+        'public_root = Path(DRIVE_ROOT) / "data/public/zeroth_korean"': (
+            "다운로드한 Zeroth 음성과 manifest를 보존할 Drive 폴더를 지정합니다."
+        ),
+        "synthetic_settings = load_settings(CONFIG)": (
+            "합성 제조 manifest와 실험 경로를 YAML 설정에서 읽습니다."
+        ),
+        "private_root = Path(PRIVATE_ROOT)": (
+            "실제 제조 데이터의 비공개 Drive 문자열 경로를 Path 객체로 변환합니다."
+        ),
+        'benchmark_dir = Path(DRIVE_ROOT) / "artifacts/benchmarks" / BENCHMARK_ID': (
+            "모델별 예측·성능표·보고서가 저장된 Drive 벤치마크 폴더를 지정합니다."
+        ),
+        'benchmark_table = pd.read_csv(benchmark_dir / "benchmark_comparison.csv")': (
+            "Whisper 후보별 정확도·속도·메모리·용량 비교표를 읽습니다."
+        ),
+        'completed = frame.loc[frame["status"].eq("completed")].copy()': (
+            "실패 후보를 제외하고 평가가 완료된 모델 또는 양자화 후보만 남깁니다."
+        ),
+        "selected_row = best_completed_member(benchmark_table)": (
+            "완료된 Whisper 후보 중 종합 순위가 가장 높은 행을 선택합니다."
+        ),
+        'SELECTED_MODEL = str(selected_row["member_id"])': (
+            "자동 선택된 Whisper 후보의 member_id를 후속 학습 모델로 사용합니다."
+        ),
+        'REVIEWER = "AUTOMATED_PUBLIC_PROXY"': (
+            "공개 프록시의 자동 선택임을 기록해 사람 검토와 구분합니다."
+        ),
+        'REVIEWER = "AUTOMATED_SYNTHETIC_FIXTURE"': (
+            "합성 데이터의 자동 선택임을 기록해 실제 제조 검토와 구분합니다."
+        ),
+        'SELECTED_MODEL = "small"  # 비교표를 보고 수정': (
+            "실제 제조 모드에서 비교표 검토 후 선택할 모델의 초기 입력값입니다."
+        ),
+        'REVIEWER = "TO_BE_COMPLETED"': (
+            "실제 제조 모델을 검토한 담당자 이름을 반드시 입력해야 하는 자리입니다."
+        ),
+        'extra_selection_args = ["--automated-proxy"]': (
+            "자동 선택 결과를 사람 검토로 오인하지 않도록 프록시 표시 인자를 추가합니다."
+        ),
+        "extra_selection_args = []": (
+            "실제 제조 모드에서는 자동 프록시 표시 없이 사람 검토 기록을 사용합니다."
+        ),
+        'model_selection = benchmark_dir / "model_selection.yaml"': (
+            "선택 모델·revision·성능·선택 사유가 기록된 YAML 경로를 지정합니다."
+        ),
+        'quantization_dir = Path(DRIVE_ROOT) / "artifacts/quantization" / QUANTIZATION_ID': (
+            "양자화별 예측·성능표·보고서가 저장된 Drive 폴더를 지정합니다."
+        ),
+        'quantization_table = pd.read_csv(quantization_dir / "quantization_comparison.csv")': (
+            "양자화 후보별 정확도 변화·속도·메모리·용량 비교표를 읽습니다."
+        ),
+        "selected_quantization_row = best_completed_member(quantization_table)": (
+            "완료된 양자화 후보 중 종합 순위가 가장 높은 행을 선택합니다."
+        ),
+        'SELECTED_VARIANT = str(selected_quantization_row["member_id"])': (
+            "자동 선택된 양자화 variant ID를 최종 Test 평가에 사용합니다."
+        ),
+        'SELECTED_VARIANT = "float16"  # 비교표를 보고 수정': (
+            "실제 제조 모드에서 손실·속도·메모리를 검토한 뒤 선택할 초기 양자화 값입니다."
+        ),
+        'extra_quantization_args = ["--automated-proxy"]': (
+            "양자화 자동 선택을 사람 배포 결정으로 오인하지 않도록 프록시 표시를 추가합니다."
+        ),
+        "extra_quantization_args = []": (
+            "실제 제조 모드에서는 자동 프록시 표시 없이 사람의 양자화 결정을 기록합니다."
+        ),
+        'quantization_selection = quantization_dir / "quantization_selection.yaml"': (
+            "최종 variant·성능·선택 사유가 기록된 YAML 경로를 지정합니다."
+        ),
+        'readiness_dir = Path(DRIVE_ROOT) / "reports/assessment_readiness" / DATA_MODE.lower()': (
+            "현재 데이터 모드의 심사 준비도 JSON·Markdown을 저장할 Drive 폴더를 지정합니다."
+        ),
+        (
+            'readiness = json.loads((readiness_dir / "assessment_readiness.json")'
+            '.read_text(encoding="utf-8"))'
+        ): (
+            "심사 항목별 통과·대기·실패 상태가 담긴 JSON 결과를 읽습니다."
+        ),
+        "expected_outputs = {": "최종 확인할 필수 표·보고서·선택 기록·백데이터 목록을 정의합니다.",
+    }
+    if stripped in exact_comments:
+        return exact_comments[stripped]
+
+    path_key_comments = {
+        '"benchmark_table"': "Whisper 모델 후보 비교 CSV 경로를 등록합니다.",
+        '"benchmark_report"': "모델 비교 결과 Word 보고서 경로를 등록합니다.",
+        '"model_selection"': "선택 모델과 근거를 기록한 YAML 경로를 등록합니다.",
+        '"selected_training"': "선택 모델 LoRA 학습·비교 결과 JSON 경로를 등록합니다.",
+        '"quantization_table"': "양자화 후보 비교 CSV 경로를 등록합니다.",
+        '"quantization_report"': "양자화 비교 결과 Word 보고서 경로를 등록합니다.",
+        '"quantization_selection"': "선택 양자화와 근거를 기록한 YAML 경로를 등록합니다.",
+        '"final_test"': "선택 완료 후 고정 Test 결과 JSON 경로를 등록합니다.",
+        '"readiness_json"': "심사 준비도 기계 판독용 JSON 경로를 등록합니다.",
+        '"readiness_markdown"': "심사 준비도 사람이 읽을 Markdown 경로를 등록합니다.",
+        '"experiment_database"': "모든 실험 이력을 누적한 SQLite 백데이터 경로를 등록합니다.",
+    }
+    for key, comment in path_key_comments.items():
+        if stripped.startswith(f"{key}:"):
+            return comment
+
+    if stripped == "run_aias(":
+        command_comments = {
+            '"train-selected-whisper",': (
+                "선택된 Whisper에 LoRA를 학습하고 Base 대비 결과를 생성합니다."
+            ),
+            '"quantization-sweep",': "선택 모델의 각 양자화 variant를 동일 조건에서 평가합니다.",
+            '"select-model",': "검토한 모델과 선택자·근거를 변경 불가능한 선택 기록으로 남깁니다.",
+            '"select-quantization",': "검토한 양자화와 선택자·근거를 선택 기록으로 남깁니다.",
+            '"finalize-evaluation",': (
+                "선택이 끝난 모델을 미사용 고정 Test split에서 한 번 평가합니다."
+            ),
+            '"assessment-audit",': "문서·데이터·실험·거버넌스·사람 검토 증거를 종합 점검합니다.",
+        }
+        return command_comments.get(next_code, "프로젝트 CLI의 지정된 연구 단계를 실행합니다.")
+
     if stripped.startswith("%pip uninstall"):
         return "Colab 기본 패키지 중 충돌 가능성이 있는 항목을 제거합니다."
     if stripped.startswith("%pip install"):
@@ -29,10 +253,36 @@ def _line_comment(line: str) -> str:
     if stripped.startswith("def "):
         function_name = stripped.split("def ", 1)[1].split("(", 1)[0]
         return f"{function_name} 재사용 함수를 정의합니다."
+    condition_comments = {
+        "if DATA_MODE not in MODE_SETTINGS:": "지원 목록에 없는 데이터 모드를 조기에 차단합니다.",
+        "if PROJECT_SRC not in sys.path:": (
+            "프로젝트 src 경로가 Python 검색 경로에 없는지 확인합니다."
+        ),
+        'if find_spec("aias_specialist") is None:': (
+            "AIAS 패키지를 실제로 import할 수 있는지 확인합니다."
+        ),
+        "if IS_PUBLIC_PROXY:": "공개 Zeroth 프록시 모드일 때의 데이터·선택 절차를 실행합니다.",
+        "elif IS_SYNTHETIC_MANUFACTURING:": "합성 제조 TTS 모드일 때 manifest와 출처를 검증합니다.",
+        "if IS_AUTOMATED_PROXY:": "공개·합성 기능 검증 모드이면 순위 기반 자동 선택을 사용합니다.",
+        'if "TO_BE_COMPLETED" in REVIEWER or "TO_BE_COMPLETED" in MODEL_REASON:': (
+            "실제 제조 모델의 검토자 또는 선택 근거가 미입력 상태인지 확인합니다."
+        ),
+        'if "TO_BE_COMPLETED" in QUANTIZATION_REASON:': (
+            "실제 제조 양자화 선택 근거가 미입력 상태인지 확인합니다."
+        ),
+        "if completed.empty:": "정상 완료된 비교 후보가 하나도 없는지 확인합니다.",
+        "if provenance_path.exists():": "데이터 출처·라이선스 JSON이 생성됐는지 확인합니다.",
+        "if not destination.exists():": "기존 비공개 입력·검토 문서를 덮어쓰지 않도록 확인합니다.",
+        "if not os.path.exists(PROJECT_DIR):": (
+            "Colab 임시 디스크에 저장소가 아직 없는지 확인합니다."
+        ),
+    }
+    if stripped in condition_comments:
+        return condition_comments[stripped]
     if stripped.startswith("if "):
-        return "해당 조건이 참인지 검사합니다."
+        return "이 줄에 명시된 보호 조건을 검사해 다음 처리 경로를 결정합니다."
     if stripped.startswith("elif "):
-        return "앞 조건이 거짓일 때 다음 조건을 검사합니다."
+        return "앞 모드가 아닐 때 이 줄의 다음 데이터 모드 조건을 검사합니다."
     if stripped == "else:":
         return "앞선 조건에 해당하지 않는 경우를 처리합니다."
     if stripped.startswith("for "):
@@ -42,11 +292,21 @@ def _line_comment(line: str) -> str:
     if stripped.startswith("return "):
         return "계산하거나 선택한 결과를 호출한 곳에 반환합니다."
     if stripped.startswith("print("):
-        return "진행 상태 또는 선택 결과를 실행 로그에 출력합니다."
+        if "Selected model" in stripped:
+            return "자동 또는 사람 검토로 선택된 Whisper 모델 ID를 출력합니다."
+        if "Selected variant" in stripped:
+            return "자동 또는 사람 검토로 선택된 양자화 variant ID를 출력합니다."
+        if "Assessment readiness" in stripped:
+            return "현재 모드의 최종 심사 준비 상태를 출력합니다."
+        if "Git commit" in stripped:
+            return "재현성을 위해 실제 실행 중인 Git 커밋 해시를 출력합니다."
+        if "Mode:" in stripped:
+            return "사용자가 확인할 수 있도록 현재 데이터 모드를 출력합니다."
+        if "Config:" in stripped:
+            return "현재 모드가 사용하는 핵심 YAML 설정 경로를 출력합니다."
+        return "해당 단계의 상태·선택 근거·안내 문구를 실행 로그에 출력합니다."
     if stripped.startswith("display("):
         return "결과를 Colab 표 형태로 표시합니다."
-    if stripped.startswith("run_aias("):
-        return "프로젝트 CLI 명령을 재현 가능한 방식으로 실행합니다."
     if stripped.startswith("subprocess.run("):
         return "외부 명령을 실행하고 실패하면 즉시 예외를 발생시킵니다."
     if stripped.startswith("os.chdir("):
@@ -59,24 +319,51 @@ def _line_comment(line: str) -> str:
         return "여러 값으로 구성된 자료 구조를 시작합니다."
     if stripped.startswith("#"):
         return ""
+    assignment_comments = {
+        "provenance_path": (
+            "현재 데이터셋의 출처·생성 방식·라이선스 정보를 담은 JSON 경로를 지정합니다."
+        ),
+        "synthetic_manifest": "합성 WAV 존재 여부·정답·split·해시를 검증한 manifest를 저장합니다.",
+        "templates": "실제 제조 모드에서 필요한 manifest·승인·검토·합격기준 양식을 연결합니다.",
+        "MODEL_REASON": "모델 선택의 데이터 범위·정확도·속도·검토 한계를 근거로 기록합니다.",
+        "QUANTIZATION_REASON": "양자화 선택의 정확도 손실·속도·메모리·용량 근거를 기록합니다.",
+        "na_position": "순위 정렬 시 결측 성능값을 가장 뒤로 보내도록 지정합니다.",
+    }
     assignment = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\s*=", stripped)
     if assignment:
-        return f"{assignment.group(1)} 변수에 이후 단계에서 사용할 값을 저장합니다."
+        variable = assignment.group(1)
+        return assignment_comments.get(
+            variable,
+            f"{variable} 변수에 이 연구 단계에서 계산하거나 선택한 값을 저장합니다.",
+        )
     if re.match(r"[\"'][^\"']+[\"']\s*:", stripped):
-        return "현재 실행 모드의 설정 항목을 정의합니다."
+        return "이 키가 나타내는 세부 설정값을 현재 실행 모드에 연결합니다."
+    if "TO_BE_COMPLETED" in stripped:
+        return "실제 제조 모드에서 사람이 검토 후 반드시 교체해야 하는 입력값입니다."
+    if "자동 선택" in stripped or "사람 검토" in stripped:
+        return "자동 프록시 결과의 범위와 사람 검토가 아님을 선택 근거에 명시합니다."
     if stripped.startswith("(") or stripped.endswith(","):
-        return "위 함수 호출이나 자료 구조에 필요한 값을 전달합니다."
-    return "이 단계에 필요한 코드 구문을 실행합니다."
+        return "바로 위 함수·목록·사전 구문에 이 줄의 구체적인 값 또는 인자를 전달합니다."
+    return "이 줄의 연산 결과를 현재 데이터 준비·평가·선택 단계에 적용합니다."
 
 
 def _annotate_code(source: str) -> str:
     """Add a Korean explanation immediately before every non-comment code line."""
     annotated: list[str] = []
-    for line in source.splitlines():
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
         if not line.strip():
             annotated.append(line)
             continue
-        comment = _line_comment(line)
+        next_code = next(
+            (
+                candidate.strip()
+                for candidate in lines[index + 1 :]
+                if candidate.strip() and not candidate.lstrip().startswith("#")
+            ),
+            "",
+        )
+        comment = _line_comment(line, next_code)
         if comment:
             indentation = line[: len(line) - len(line.lstrip())]
             annotated.append(f"{indentation}# {comment}")
@@ -466,9 +753,7 @@ def build() -> Path:
     if OUTPUT.exists():
         existing_notebook = nbf.read(OUTPUT, as_version=4)
         if len(existing_notebook.cells) == len(notebook.cells):
-            for cell, existing_cell in zip(
-                notebook.cells, existing_notebook.cells, strict=True
-            ):
+            for cell, existing_cell in zip(notebook.cells, existing_notebook.cells, strict=True):
                 if "id" in existing_cell:
                     cell["id"] = existing_cell["id"]
 
