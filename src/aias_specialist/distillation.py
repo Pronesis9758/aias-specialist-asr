@@ -10,6 +10,7 @@ import yaml
 
 from .config import Settings
 from .correction import apply_term_correction, resolved_correction_options
+from .correction_audit import write_correction_audit
 from .data import load_domain_terms, prepare_manifest
 from .environment import collect_environment
 from .evaluation import compare_metrics, per_sample_metrics
@@ -375,6 +376,7 @@ def train_whisper_distillation(settings: Settings) -> Path:
         corrected_predictions.to_csv(
             run_dir / "predictions_corrected.csv", index=False, encoding="utf-8-sig"
         )
+        write_correction_audit(run_dir, distilled_predictions, corrected_predictions)
         corrected_metrics = _evaluation_metrics(corrected_predictions, terms)
 
         training_metrics = {

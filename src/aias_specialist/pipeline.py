@@ -10,6 +10,7 @@ import yaml
 from .asr import run_inference
 from .config import Settings
 from .correction import apply_term_correction, resolved_correction_options
+from .correction_audit import write_correction_audit
 from .data import load_domain_terms, prepare_manifest
 from .environment import collect_environment
 from .evaluation import compare_metrics, evaluate_predictions, per_sample_metrics
@@ -141,8 +142,22 @@ def run_pipeline(settings: Settings) -> RunResult:
         corrected_predictions.to_csv(
             run_dir / "predictions_corrected.csv", index=False, encoding="utf-8-sig"
         )
+        correction_audit = write_correction_audit(
+            run_dir,
+            baseline_predictions,
+            corrected_predictions,
+        )
         corrected_metrics = evaluate_predictions(corrected_predictions, terms)
-        store.event(run_id, "correction", "completed")
+        store.event(
+            run_id,
+            "correction",
+            "completed",
+            (
+                f"changed={int(correction_audit['text_changed'].sum())}; "
+                f"improved={int((correction_audit['outcome'] == 'improved').sum())}; "
+                f"degraded={int((correction_audit['outcome'] == 'degraded').sum())}"
+            ),
+        )
 
         metrics = {
             "baseline": baseline_metrics,

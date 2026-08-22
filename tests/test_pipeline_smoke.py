@@ -28,6 +28,9 @@ def test_fixture_pipeline_creates_auditable_artifacts(tmp_path: Path) -> None:
         "prepared_manifest.csv",
         "predictions_baseline.csv",
         "predictions_corrected.csv",
+        "correction_audit.csv",
+        "correction_audit.jsonl",
+        "correction_audit.md",
         "metrics.json",
         "run_summary.md",
         "reports/evaluation_report.docx",
@@ -35,6 +38,10 @@ def test_fixture_pipeline_creates_auditable_artifacts(tmp_path: Path) -> None:
     for relative in required:
         assert (result.run_dir / relative).exists(), relative
     assert result.metrics["corrected"]["wer"] < result.metrics["baseline"]["wer"]
+    correction_audit = pd.read_csv(result.run_dir / "correction_audit.csv")
+    assert correction_audit["text_changed"].any()
+    assert (correction_audit["outcome"] == "improved").any()
+    assert correction_audit["cer_absolute_reduction"].max() > 0
     history = ExperimentStore(tmp_path / "backdata/experiments.sqlite3").history()
     assert history[0]["status"] == "completed"
 

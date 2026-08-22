@@ -46,6 +46,11 @@ correction:
 각 적용 내역은 `predictions_corrected.csv`의 `correction_details`,
 `correction_methods`, `correction_count`에 기록됩니다.
 
+실행별 `correction_audit.csv`, `correction_audit.jsonl`, `correction_audit.md`에는 샘플별
+정답 문장, 보정 전·후 전사, 적용 방법과 점수, CER/WER 보정 전·후 값, 절대 감소량 및
+`improved`·`unchanged`·`degraded` 판정이 저장됩니다. 실제 전사 내용은 콘솔에 출력하지 않고
+실행 폴더 안에만 보존하며 변경되거나 악화된 문장은 사람이 검토해야 합니다.
+
 ## 3. Nearest Neighbor Search
 
 기본 `char_ngram` backend는 별도 모델 다운로드 없이 문자 2/3/4-gram 벡터의 cosine 최근접
