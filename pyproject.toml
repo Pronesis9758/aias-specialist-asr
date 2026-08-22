@@ -3,7 +3,7 @@ name = "aias-specialist-asr"
 version = "0.1.0"
 description = "Reproducible manufacturing-domain Korean ASR experiment and reporting pipeline"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12,<3.14"
 dependencies = [
   "faster-whisper>=1.1,<2",
   "huggingface-hub>=0.34,<2",
