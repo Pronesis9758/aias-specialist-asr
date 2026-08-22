@@ -1,4 +1,5 @@
 quantization:
+  enabled: true
   id: public-whisper-quantization-v1
   name: 선택 Whisper 모델 단계별 양자화 비교
   base_config: configs/colab_public_sample.yaml

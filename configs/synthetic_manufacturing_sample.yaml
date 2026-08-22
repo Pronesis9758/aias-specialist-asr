@@ -36,6 +36,18 @@ evaluation:
 correction:
   enabled: true
   case_sensitive: false
+  alias_enabled: true
+  top_k: 2
+  max_ngram_tokens: 3
+  information_retrieval:
+    enabled: true
+    min_score: 0.62
+    weight: 0.5
+  nearest_neighbor:
+    enabled: true
+    backend: char_ngram
+    min_score: 0.78
+    weight: 0.5
 
 training:
   enabled: true
@@ -48,6 +60,27 @@ training:
   gradient_accumulation_steps: 2
   gradient_checkpointing: false
   learning_rate: 0.0001
+  max_steps: 30
+  warmup_steps: 5
+  save_steps: 10
+  eval_steps: 10
+  logging_steps: 5
+  save_total_limit: 2
+  resume_from_checkpoint: auto
+
+distillation:
+  enabled: true
+  teacher_repo_id: openai/whisper-small
+  teacher_revision: main
+  student_repo_id: openai/whisper-tiny
+  student_revision: main
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/synthetic-manufacturing-whisper-distilled
+  hard_label_weight: 0.5
+  temperature: 2.0
+  train_batch_size: 2
+  eval_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 0.00005
   max_steps: 30
   warmup_steps: 5
   save_steps: 10

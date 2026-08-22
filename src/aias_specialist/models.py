@@ -77,6 +77,31 @@ def resolve_model_lock(settings: Settings) -> dict[str, Any]:
                 "roles": ["training"],
             }
         )
+    distillation = settings.distillation.values or {}
+    if settings.distillation.enabled:
+        for role in ["teacher", "student"]:
+            repo_key = f"{role}_repo_id"
+            if distillation.get(repo_key):
+                requests.append(
+                    {
+                        "repo_id": str(distillation[repo_key]),
+                        "revision": str(distillation.get(f"{role}_revision", "main")),
+                        "roles": [f"distillation_{role}"],
+                    }
+                )
+    if (
+        settings.correction.enabled
+        and settings.correction.nearest_neighbor_enabled
+        and settings.correction.nn_backend == "transformers"
+        and settings.correction.nn_model_repo_id
+    ):
+        requests.append(
+            {
+                "repo_id": settings.correction.nn_model_repo_id,
+                "revision": settings.correction.nn_model_revision,
+                "roles": ["retrieval_embedding"],
+            }
+        )
     return resolve_model_revisions(settings.paths.model_lock, requests)
 
 
@@ -101,6 +126,33 @@ def load_model_lock(settings: Settings) -> dict[str, Any]:
         if (
             not isinstance(training_lock, dict)
             or str(training_lock.get("requested_revision")) != training_revision
+        ):
+            return resolve_model_lock(settings)
+    distillation = settings.distillation.values or {}
+    if settings.distillation.enabled:
+        for role in ["teacher", "student"]:
+            repo_id = str(distillation.get(f"{role}_repo_id", ""))
+            revision = str(distillation.get(f"{role}_revision", "main"))
+            if not repo_id:
+                continue
+            model_lock = models.get(repo_id)
+            if (
+                not isinstance(model_lock, dict)
+                or str(model_lock.get("requested_revision")) != revision
+            ):
+                return resolve_model_lock(settings)
+    retrieval_repo = settings.correction.nn_model_repo_id
+    if (
+        settings.correction.enabled
+        and settings.correction.nearest_neighbor_enabled
+        and settings.correction.nn_backend == "transformers"
+        and retrieval_repo
+    ):
+        retrieval_lock = models.get(retrieval_repo)
+        if (
+            not isinstance(retrieval_lock, dict)
+            or str(retrieval_lock.get("requested_revision"))
+            != settings.correction.nn_model_revision
         ):
             return resolve_model_lock(settings)
     return lock

@@ -48,10 +48,29 @@ class EvaluationConfig:
 class CorrectionConfig:
     enabled: bool = True
     case_sensitive: bool = False
+    alias_enabled: bool = True
+    information_retrieval_enabled: bool = False
+    nearest_neighbor_enabled: bool = False
+    top_k: int = 3
+    max_ngram_tokens: int = 4
+    min_ir_score: float = 0.62
+    min_nn_score: float = 0.78
+    nn_backend: str = "char_ngram"
+    nn_model_repo_id: str | None = None
+    nn_model_revision: str = "main"
+    nn_device: str = "auto"
+    ir_weight: float = 0.5
+    nn_weight: float = 0.5
 
 
 @dataclass(frozen=True)
 class TrainingConfig:
+    enabled: bool = False
+    values: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class DistillationConfig:
     enabled: bool = False
     values: dict[str, Any] | None = None
 
@@ -83,6 +102,7 @@ class Settings:
     evaluation: EvaluationConfig
     correction: CorrectionConfig
     training: TrainingConfig
+    distillation: DistillationConfig
     report: ReportConfig
     governance: GovernanceConfig
     raw: dict[str, Any]
@@ -137,7 +157,43 @@ def load_settings(config_path: str | Path) -> Settings:
     model = _section(raw, "model")
     correction = _section(raw, "correction")
     training = _section(raw, "training")
+    distillation = raw.get("distillation", {})
+    if not isinstance(distillation, dict):
+        raise ValueError("Config section 'distillation' must be a mapping")
     report = _section(raw, "report")
+
+    information_retrieval = correction.get("information_retrieval", {})
+    if not isinstance(information_retrieval, dict):
+        raise ValueError("correction.information_retrieval must be a mapping")
+    nearest_neighbor = correction.get("nearest_neighbor", {})
+    if not isinstance(nearest_neighbor, dict):
+        raise ValueError("correction.nearest_neighbor must be a mapping")
+    top_k = int(correction.get("top_k", 3))
+    max_ngram_tokens = int(correction.get("max_ngram_tokens", 4))
+    if top_k < 1:
+        raise ValueError("correction.top_k must be one or greater")
+    if max_ngram_tokens < 1:
+        raise ValueError("correction.max_ngram_tokens must be one or greater")
+    min_ir_score = float(information_retrieval.get("min_score", 0.62))
+    min_nn_score = float(nearest_neighbor.get("min_score", 0.78))
+    if not 0.0 <= min_ir_score <= 1.0:
+        raise ValueError("correction.information_retrieval.min_score must be between 0 and 1")
+    if not 0.0 <= min_nn_score <= 1.0:
+        raise ValueError("correction.nearest_neighbor.min_score must be between 0 and 1")
+    nn_backend = str(nearest_neighbor.get("backend", "char_ngram")).strip().lower()
+    if nn_backend not in {"char_ngram", "transformers"}:
+        raise ValueError(
+            "correction.nearest_neighbor.backend must be char_ngram or transformers"
+        )
+    nn_model_repo_id = nearest_neighbor.get("model_repo_id")
+    if (
+        bool(nearest_neighbor.get("enabled", False))
+        and nn_backend == "transformers"
+        and not nn_model_repo_id
+    ):
+        raise ValueError(
+            "correction.nearest_neighbor.model_repo_id is required for transformers backend"
+        )
 
     backend = str(model.get("backend", "fixture"))
     if backend not in {"fixture", "faster_whisper"}:
@@ -208,10 +264,29 @@ def load_settings(config_path: str | Path) -> Settings:
         correction=CorrectionConfig(
             enabled=bool(correction.get("enabled", True)),
             case_sensitive=bool(correction.get("case_sensitive", False)),
+            alias_enabled=bool(correction.get("alias_enabled", True)),
+            information_retrieval_enabled=bool(
+                information_retrieval.get("enabled", False)
+            ),
+            nearest_neighbor_enabled=bool(nearest_neighbor.get("enabled", False)),
+            top_k=top_k,
+            max_ngram_tokens=max_ngram_tokens,
+            min_ir_score=min_ir_score,
+            min_nn_score=min_nn_score,
+            nn_backend=nn_backend,
+            nn_model_repo_id=(str(nn_model_repo_id) if nn_model_repo_id else None),
+            nn_model_revision=str(nearest_neighbor.get("model_revision", "main")),
+            nn_device=str(nearest_neighbor.get("device", "auto")),
+            ir_weight=float(information_retrieval.get("weight", 0.5)),
+            nn_weight=float(nearest_neighbor.get("weight", 0.5)),
         ),
         training=TrainingConfig(
             enabled=bool(training.get("enabled", False)),
             values=dict(training),
+        ),
+        distillation=DistillationConfig(
+            enabled=bool(distillation.get("enabled", False)),
+            values=dict(distillation),
         ),
         report=ReportConfig(
             title=str(report.get("title", "ASR Evaluation Report")),

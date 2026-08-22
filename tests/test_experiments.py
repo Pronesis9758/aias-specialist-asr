@@ -160,6 +160,24 @@ def test_benchmark_rejects_test_split_for_model_selection(tmp_path: Path) -> Non
         raise AssertionError("Benchmark should reject selection on the held-out test split")
 
 
+def test_quantization_can_be_disabled_in_spec(tmp_path: Path) -> None:
+    base_config = _base_config(tmp_path)
+    spec = yaml.safe_load(
+        (ROOT / "configs/quantization/local_fixture.yaml").read_text(encoding="utf-8")
+    )
+    spec["quantization"]["enabled"] = False
+    spec["quantization"]["base_config"] = str(base_config)
+    spec_path = tmp_path / "disabled-quantization.yaml"
+    spec_path.write_text(yaml.safe_dump(spec), encoding="utf-8")
+    selection_path = tmp_path / "selection.yaml"
+    selection_path.write_text(
+        yaml.safe_dump({"selection": {"model_id": "tiny"}}), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="quantization.enabled is false"):
+        run_quantization_sweep(spec_path, selection_path)
+
+
 def test_isolated_worker_streams_progress(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

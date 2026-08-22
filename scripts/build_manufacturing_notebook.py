@@ -22,6 +22,17 @@ def _line_comment(
         'DATA_MODE = "SYNTHETIC_MANUFACTURING"': (
             "현재 실행을 합성 제조 TTS 데이터 모드로 선택합니다. 실제 데이터 사용 시 값을 바꿉니다."
         ),
+        "RUN_LORA = True": "선택된 Whisper의 LoRA 학습 단계를 실행하도록 켭니다.",
+        "RUN_QUANTIZATION = True": "선택 모델의 정밀도별 양자화 비교 단계를 실행하도록 켭니다.",
+        "ENABLE_INFORMATION_RETRIEVAL = True": (
+            "BM25 기반 제조 용어 정보검색 보정을 실행 설정에서 활성화합니다."
+        ),
+        "ENABLE_NEAREST_NEIGHBOR = True": (
+            "벡터 최근접 이웃 검색 기반 제조 용어 보정을 실행 설정에서 활성화합니다."
+        ),
+        "RUN_DISTILLATION = False  # 추가 GPU 비용이 큰 선택 실험": (
+            "Teacher·Student 지식 증류는 비용이 커 기본 비활성화하며 필요할 때 True로 바꿉니다."
+        ),
         'GITHUB_REPO_URL = "https://github.com/Pronesis9758/aias-specialist-asr.git"': (
             "Colab에서 복제할 ASR 프로젝트 GitHub 저장소 주소를 지정합니다."
         ),
@@ -132,6 +143,55 @@ def _line_comment(
         'environment = {**os.environ, "PYTHONUNBUFFERED": "1"}': (
             "학습·평가 진행 로그가 지연 없이 Colab에 표시되도록 실행 환경을 만듭니다."
         ),
+        "source_config_path = Path(CONFIG)": (
+            "선택 데이터 모드의 원본 YAML을 읽기 위한 Path 객체를 만듭니다."
+        ),
+        'runtime_config = yaml.safe_load(source_config_path.read_text(encoding="utf-8"))': (
+            "GitHub 원본을 보존하면서 기능 옵션을 적용할 실행용 설정 사본을 읽습니다."
+        ),
+        "runtime_config = yaml.safe_load(source_config_path.read_text(encoding='utf-8'))": (
+            "GitHub 원본을 보존하면서 기능 옵션을 적용할 실행용 설정 사본을 읽습니다."
+        ),
+        "runtime_config_path = Path(\"/content/aias_runtime_config.yaml\")": (
+            "기능 토글이 반영된 임시 설정 YAML의 Colab 경로를 지정합니다."
+        ),
+        "runtime_config_path = Path('/content/aias_runtime_config.yaml')": (
+            "기능 토글이 반영된 임시 설정 YAML의 Colab 경로를 지정합니다."
+        ),
+        'runtime_matrix = yaml.safe_load(Path(MODEL_MATRIX).read_text(encoding="utf-8"))': (
+            "모델 비교가 실행용 설정을 사용하도록 원본 모델 행렬 YAML을 읽습니다."
+        ),
+        "runtime_matrix = yaml.safe_load(Path(MODEL_MATRIX).read_text(encoding='utf-8'))": (
+            "모델 비교가 실행용 설정을 사용하도록 원본 모델 행렬 YAML을 읽습니다."
+        ),
+        "runtime_matrix_path = Path(\"/content/aias_runtime_model_matrix.yaml\")": (
+            "실행용 base config가 연결된 임시 모델 행렬 경로를 지정합니다."
+        ),
+        "runtime_matrix_path = Path('/content/aias_runtime_model_matrix.yaml')": (
+            "실행용 base config가 연결된 임시 모델 행렬 경로를 지정합니다."
+        ),
+        "runtime_quantization = yaml.safe_load(": (
+            "양자화 사용 여부와 실행용 base config를 반영할 원본 명세를 읽기 시작합니다."
+        ),
+        (
+            'runtime_quantization = yaml.safe_load(Path(QUANTIZATION_SPEC).read_text('
+            'encoding="utf-8"))'
+        ): ("양자화 사용 여부와 실행용 base config를 반영할 원본 명세를 읽습니다."),
+        "runtime_quantization_path = Path(\"/content/aias_runtime_quantization.yaml\")": (
+            "양자화 토글이 반영된 임시 양자화 명세 경로를 지정합니다."
+        ),
+        "runtime_quantization_path = Path('/content/aias_runtime_quantization.yaml')": (
+            "양자화 토글이 반영된 임시 양자화 명세 경로를 지정합니다."
+        ),
+        "CONFIG = str(runtime_config_path)": (
+            "이후 AIAS 명령이 기능 토글 반영 설정 사본을 사용하도록 경로를 교체합니다."
+        ),
+        "MODEL_MATRIX = str(runtime_matrix_path)": (
+            "이후 모델 비교가 실행용 설정을 연결한 모델 행렬을 사용하도록 교체합니다."
+        ),
+        "QUANTIZATION_SPEC = str(runtime_quantization_path)": (
+            "이후 양자화 단계가 활성화 여부를 반영한 임시 명세를 사용하도록 교체합니다."
+        ),
         'public_root = Path(DRIVE_ROOT) / "data/public/zeroth_korean"': (
             "다운로드한 Zeroth 음성과 manifest를 보존할 Drive 폴더를 지정합니다."
         ),
@@ -201,6 +261,39 @@ def _line_comment(
         'quantization_selection = quantization_dir / "quantization_selection.yaml"': (
             "최종 variant·성능·선택 사유가 기록된 YAML 경로를 지정합니다."
         ),
+        "distillation_run_dir = None": (
+            "지식 증류를 실행하지 않은 상태를 나타내도록 결과 폴더를 비워 둡니다."
+        ),
+        "before_distillation = set(": (
+            "새 증류 실행을 식별하기 위해 실행 전 distill run 폴더 목록을 수집합니다."
+        ),
+        'before_distillation = set(Path(DRIVE_ROOT, "artifacts/runs").glob("distill-*"))': (
+            "새 증류 실행을 식별하기 위해 실행 전 distill run 폴더 목록을 수집합니다."
+        ),
+        "after_distillation = set(": (
+            "증류 명령 완료 후 distill run 폴더 목록을 다시 수집합니다."
+        ),
+        'after_distillation = set(Path(DRIVE_ROOT, "artifacts/runs").glob("distill-*"))': (
+            "증류 명령 완료 후 distill run 폴더 목록을 다시 수집합니다."
+        ),
+        "new_distillation_runs = sorted(": (
+            "실행 전후 차이로 새 증류 결과만 찾아 수정 시각 순으로 정렬합니다."
+        ),
+        "distillation_run_dir = new_distillation_runs[-1]": (
+            "가장 최근에 생성된 지식 증류 run을 결과 확인 대상으로 선택합니다."
+        ),
+        "quantization_table = None": (
+            "양자화를 끈 경우에도 후속 조건 분기가 가능하도록 비교표를 비워 둡니다."
+        ),
+        "quantization_selection = None": (
+            "양자화를 끈 경우 모델 선택을 최종 선택으로 사용할 수 있게 초기화합니다."
+        ),
+        "final_selection = (": (
+            "양자화 실행 여부에 따라 최종 Test에 사용할 선택 YAML을 결정합니다."
+        ),
+        "final_selection = quantization_selection if RUN_QUANTIZATION else model_selection": (
+            "양자화 실행 여부에 따라 최종 Test에 사용할 선택 YAML을 결정합니다."
+        ),
         'readiness_dir = Path(DRIVE_ROOT) / "reports/assessment_readiness" / DATA_MODE.lower()': (
             "현재 데이터 모드의 심사 준비도 JSON·Markdown을 저장할 Drive 폴더를 지정합니다."
         ),
@@ -232,6 +325,11 @@ def _line_comment(
             "프로젝트 폴더에서 지정 작업 브랜치로 전환하는 Git 명령을 구성합니다."
         ),
         "check=True,": "Git·CLI 명령이 실패하면 다음 셀로 진행하지 않고 즉시 예외를 발생시킵니다.",
+        'encoding="utf-8",': "한글이 손상되지 않도록 실행용 YAML을 UTF-8로 저장합니다.",
+        "encoding='utf-8',": "한글이 손상되지 않도록 실행용 YAML을 UTF-8로 저장합니다.",
+        "key=lambda path: path.stat().st_mtime,": (
+            "새 증류 결과 폴더를 파일 수정 시각 기준으로 정렬하는 함수를 전달합니다."
+        ),
         "sys.path.insert(0, PROJECT_SRC)": (
             "방금 설치한 저장소의 src를 Python 검색 경로 최우선 순위에 추가합니다."
         ),
@@ -641,6 +739,9 @@ def build() -> Path:
             "다시 실행합니다. 이 모드의 모델·양자화 선택은 반드시 사람이 수행합니다.\n\n"
             "> 공개·합성 결과는 코드와 산출물의 정상 동작 증거입니다. 제조 현장 성능, "
             "배포 적합성 또는 심사 최종 결론의 증거로 사용하면 안 됩니다.\n\n"
+            "양자화, BM25 정보검색, 벡터 최근접 이웃 검색, 지식 증류는 실행 모드와 "
+            "별도로 각각 켜고 끌 수 있습니다. 지식 증류는 추가 GPU 시간과 모델 다운로드가 "
+            "필요하므로 기본값은 꺼짐입니다.\n\n"
             "**보안:** 카메라·마이크·패스키를 사용하지 않습니다. 실제 음성은 GitHub에 "
             "올리지 않고 승인된 비공개 Drive 경로만 사용합니다."
         ),
@@ -648,6 +749,11 @@ def build() -> Path:
         nbf.v4.new_code_cell(
             '# "PUBLIC_PROXY", "SYNTHETIC_MANUFACTURING", "PRIVATE_MANUFACTURING"\n'
             'DATA_MODE = "SYNTHETIC_MANUFACTURING"\n\n'
+            "RUN_LORA = True\n"
+            "RUN_QUANTIZATION = True\n"
+            "ENABLE_INFORMATION_RETRIEVAL = True\n"
+            "ENABLE_NEAREST_NEIGHBOR = True\n"
+            "RUN_DISTILLATION = False  # 추가 GPU 비용이 큰 선택 실험\n\n"
             'GITHUB_REPO_URL = "https://github.com/Pronesis9758/aias-specialist-asr.git"\n'
             'GITHUB_BRANCH = "codex/whisper-benchmark-quantization"  # PR 병합 후 main\n'
             'PROJECT_DIR = "/content/AIAS"\n'
@@ -769,6 +875,58 @@ def build() -> Path:
             '    print("\\nRunning:", " ".join(command), flush=True)\n'
             "    environment = {**os.environ, 'PYTHONUNBUFFERED': '1'}\n"
             "    subprocess.run(command, check=True, env=environment)"
+        ),
+        nbf.v4.new_markdown_cell(
+            "### 3-1. 선택 기능을 실행용 설정에 반영\n\n"
+            "GitHub 원본 YAML은 수정하지 않고 `/content`에 실행용 사본을 만듭니다. "
+            "따라서 위 Boolean 값만 바꿔 양자화·IR·NN Search·Distillation을 독립적으로 "
+            "실행할 수 있습니다. `char_ngram` NN은 다운로드 없는 재현용 벡터 검색이며, "
+            "실제 임베딩 모델을 쓰려면 YAML의 backend를 `transformers`로 변경합니다."
+        ),
+        nbf.v4.new_code_cell(
+            "import yaml\n\n"
+            "source_config_path = Path(CONFIG)\n"
+            "runtime_config = yaml.safe_load(source_config_path.read_text(encoding='utf-8'))\n"
+            "runtime_config.setdefault('correction', {})\n"
+            "runtime_config['correction'].setdefault('information_retrieval', {})[\n"
+            "    'enabled'\n"
+            "] = ENABLE_INFORMATION_RETRIEVAL\n"
+            "runtime_config['correction'].setdefault('nearest_neighbor', {})[\n"
+            "    'enabled'\n"
+            "] = ENABLE_NEAREST_NEIGHBOR\n"
+            "runtime_config.setdefault('distillation', {})['enabled'] = RUN_DISTILLATION\n"
+            "runtime_config_path = Path('/content/aias_runtime_config.yaml')\n"
+            "runtime_config_path.write_text(\n"
+            "    yaml.safe_dump(runtime_config, allow_unicode=True, sort_keys=False),\n"
+            "    encoding='utf-8',\n"
+            ")\n\n"
+            "runtime_matrix = yaml.safe_load(Path(MODEL_MATRIX).read_text(encoding='utf-8'))\n"
+            "runtime_matrix['benchmark']['base_config'] = str(runtime_config_path)\n"
+            "runtime_matrix_path = Path('/content/aias_runtime_model_matrix.yaml')\n"
+            "runtime_matrix_path.write_text(\n"
+            "    yaml.safe_dump(runtime_matrix, allow_unicode=True, sort_keys=False),\n"
+            "    encoding='utf-8',\n"
+            ")\n\n"
+            "runtime_quantization = yaml.safe_load(\n"
+            "    Path(QUANTIZATION_SPEC).read_text(encoding='utf-8')\n"
+            ")\n"
+            "runtime_quantization['quantization']['enabled'] = RUN_QUANTIZATION\n"
+            "runtime_quantization['quantization']['base_config'] = str(runtime_config_path)\n"
+            "runtime_quantization_path = Path('/content/aias_runtime_quantization.yaml')\n"
+            "runtime_quantization_path.write_text(\n"
+            "    yaml.safe_dump(runtime_quantization, allow_unicode=True, sort_keys=False),\n"
+            "    encoding='utf-8',\n"
+            ")\n\n"
+            "CONFIG = str(runtime_config_path)\n"
+            "MODEL_MATRIX = str(runtime_matrix_path)\n"
+            "QUANTIZATION_SPEC = str(runtime_quantization_path)\n"
+            "print({\n"
+            "    'lora': RUN_LORA,\n"
+            "    'quantization': RUN_QUANTIZATION,\n"
+            "    'information_retrieval': ENABLE_INFORMATION_RETRIEVAL,\n"
+            "    'nearest_neighbor': ENABLE_NEAREST_NEIGHBOR,\n"
+            "    'distillation': RUN_DISTILLATION,\n"
+            "})"
         ),
         nbf.v4.new_markdown_cell(
             "## 4. 데이터 준비\n\n"
@@ -897,30 +1055,70 @@ def build() -> Path:
             "사용하며 데이터 규모에 맞춰 조정합니다."
         ),
         nbf.v4.new_code_cell(
-            "run_aias(\n"
-            "    'train-selected-whisper', '--selection', str(model_selection),\n"
-            "    '--config', CONFIG,\n"
-            ")"
-        ),
-        nbf.v4.new_markdown_cell("## 8. 양자화 비교"),
-        nbf.v4.new_code_cell(
-            "run_aias(\n"
-            "    'quantization-sweep', '--spec', QUANTIZATION_SPEC,\n"
-            "    '--selection', str(model_selection),\n"
-            ")\n"
-            "quantization_dir = Path(DRIVE_ROOT) / 'artifacts/quantization' / QUANTIZATION_ID\n"
-            "quantization_table = pd.read_csv(\n"
-            "    quantization_dir / 'quantization_comparison.csv'\n"
-            ")\n"
-            "display(quantization_table)"
+            "if RUN_LORA:\n"
+            "    run_aias(\n"
+            "        'train-selected-whisper', '--selection', str(model_selection),\n"
+            "        '--config', CONFIG,\n"
+            "    )\n"
+            "else:\n"
+            "    print('LoRA skipped by RUN_LORA=False')"
         ),
         nbf.v4.new_markdown_cell(
-            "## 9. 양자화 선택\n\n"
+            "## 8. Knowledge Distillation (선택)\n\n"
+            "고정된 Teacher Whisper의 token 분포와 정답 label을 결합해 더 작은 Student를 "
+            "학습합니다. GPU 시간과 모델 다운로드 비용이 크므로 `RUN_DISTILLATION=True`인 "
+            "경우에만 실행합니다."
+        ),
+        nbf.v4.new_code_cell(
+            "distillation_run_dir = None\n"
+            "if RUN_DISTILLATION:\n"
+            "    run_aias('model-lock', '--config', CONFIG)\n"
+            "    before_distillation = set(\n"
+            "        Path(DRIVE_ROOT, 'artifacts/runs').glob('distill-*')\n"
+            "    )\n"
+            "    run_aias('train-whisper-distillation', '--config', CONFIG)\n"
+            "    after_distillation = set(\n"
+            "        Path(DRIVE_ROOT, 'artifacts/runs').glob('distill-*')\n"
+            "    )\n"
+            "    new_distillation_runs = sorted(\n"
+            "        after_distillation - before_distillation,\n"
+            "        key=lambda path: path.stat().st_mtime,\n"
+            "    )\n"
+            "    if not new_distillation_runs:\n"
+            "        raise RuntimeError('새 지식 증류 run 디렉터리를 찾지 못했습니다.')\n"
+            "    distillation_run_dir = new_distillation_runs[-1]\n"
+            "    display(json.loads(\n"
+            "        (distillation_run_dir / 'metrics.json').read_text(encoding='utf-8')\n"
+            "    ))\n"
+            "else:\n"
+            "    print('Knowledge distillation skipped by RUN_DISTILLATION=False')"
+        ),
+        nbf.v4.new_markdown_cell("## 9. 양자화 비교"),
+        nbf.v4.new_code_cell(
+            "quantization_dir = Path(DRIVE_ROOT) / 'artifacts/quantization' / QUANTIZATION_ID\n"
+            "quantization_table = None\n"
+            "if RUN_QUANTIZATION:\n"
+            "    run_aias(\n"
+            "        'quantization-sweep', '--spec', QUANTIZATION_SPEC,\n"
+            "        '--selection', str(model_selection),\n"
+            "    )\n"
+            "    quantization_table = pd.read_csv(\n"
+            "        quantization_dir / 'quantization_comparison.csv'\n"
+            "    )\n"
+            "    display(quantization_table)\n"
+            "else:\n"
+            "    print('Quantization skipped by RUN_QUANTIZATION=False')"
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 10. 양자화 선택\n\n"
             "공개·합성 모드는 종합 rank 1을 자동 선택합니다. 실제 제조 모드는 정확도 손실, "
             "RTF, GPU 메모리와 모델 용량을 사람이 함께 검토합니다."
         ),
         nbf.v4.new_code_cell(
-            "if IS_AUTOMATED_PROXY:\n"
+            "quantization_selection = None\n"
+            "if not RUN_QUANTIZATION:\n"
+            "    print('Quantization selection skipped because quantization is disabled.')\n"
+            "elif IS_AUTOMATED_PROXY:\n"
             "    selected_quantization_row = best_completed_member(quantization_table)\n"
             "    SELECTED_VARIANT = str(selected_quantization_row['member_id'])\n"
             "    if IS_PUBLIC_PROXY:\n"
@@ -934,7 +1132,7 @@ def build() -> Path:
             "            '배포 결정 또는 사람 검토 증거가 아님.'\n"
             "        )\n"
             "    extra_quantization_args = ['--automated-proxy']\n"
-            "else:\n"
+            "elif RUN_QUANTIZATION:\n"
             "    SELECTED_VARIANT = 'float16'  # 비교표를 보고 수정\n"
             "    QUANTIZATION_REASON = (\n"
             "        'TO_BE_COMPLETED: 정확도 손실·속도·메모리·모델 용량 근거'\n"
@@ -942,27 +1140,31 @@ def build() -> Path:
             "    if 'TO_BE_COMPLETED' in QUANTIZATION_REASON:\n"
             "        raise ValueError('제조 모드에서는 양자화 선택 근거를 입력하세요.')\n"
             "    extra_quantization_args = []\n\n"
-            "run_aias(\n"
-            "    'select-quantization', '--quantization-dir', str(quantization_dir),\n"
-            "    '--variant-id', SELECTED_VARIANT, '--reviewer', REVIEWER,\n"
-            "    '--reason', QUANTIZATION_REASON, *extra_quantization_args,\n"
-            ")\n"
-            "quantization_selection = quantization_dir / 'quantization_selection.yaml'\n"
-            "print('Selected variant:', SELECTED_VARIANT)\n"
-            "print(quantization_selection.read_text(encoding='utf-8'))"
+            "if RUN_QUANTIZATION:\n"
+            "    run_aias(\n"
+            "        'select-quantization', '--quantization-dir', str(quantization_dir),\n"
+            "        '--variant-id', SELECTED_VARIANT, '--reviewer', REVIEWER,\n"
+            "        '--reason', QUANTIZATION_REASON, *extra_quantization_args,\n"
+            "    )\n"
+            "    quantization_selection = quantization_dir / 'quantization_selection.yaml'\n"
+            "    print('Selected variant:', SELECTED_VARIANT)\n"
+            "    print(quantization_selection.read_text(encoding='utf-8'))"
         ),
         nbf.v4.new_markdown_cell(
-            "## 10. 고정 Test 최종평가\n\n"
+            "## 11. 고정 Test 최종평가\n\n"
             "모델·양자화 선택이 끝난 뒤에만 그동안 보지 않은 Test split을 한 번 평가합니다."
         ),
         nbf.v4.new_code_cell(
+            "final_selection = (\n"
+            "    quantization_selection if RUN_QUANTIZATION else model_selection\n"
+            ")\n"
             "run_aias(\n"
-            "    'finalize-evaluation', '--selection', str(quantization_selection),\n"
+            "    'finalize-evaluation', '--selection', str(final_selection),\n"
             "    '--config', CONFIG,\n"
             ")"
         ),
         nbf.v4.new_markdown_cell(
-            "## 11. 산출물·심사 준비도 확인\n\n"
+            "## 12. 산출물·심사 준비도 확인\n\n"
             "공개·합성 모드에서는 `not_ready`가 정상입니다. 공개·합성 데이터, 자동 선택, "
             "미완료 사람 서명은 제조 심사 증거를 대체하지 못합니다."
         ),
@@ -984,22 +1186,36 @@ def build() -> Path:
             "    ['criterion', 'check_id', 'status', 'message', 'evidence']\n"
             "])"
         ),
-        nbf.v4.new_markdown_cell("## 12. 생성 결과 위치 요약"),
+        nbf.v4.new_markdown_cell("## 13. 생성 결과 위치 요약"),
         nbf.v4.new_code_cell(
             "expected_outputs = {\n"
             "    'benchmark_table': benchmark_dir / 'benchmark_comparison.csv',\n"
             "    'benchmark_report': benchmark_dir / 'reports/benchmark_report.docx',\n"
             "    'model_selection': benchmark_dir / 'model_selection.yaml',\n"
-            "    'selected_training': benchmark_dir / 'selected_training_result.json',\n"
-            "    'quantization_table': quantization_dir / 'quantization_comparison.csv',\n"
-            "    'quantization_report': "
-            "quantization_dir / 'reports/quantization_report.docx',\n"
-            "    'quantization_selection': quantization_dir / 'quantization_selection.yaml',\n"
-            "    'final_test': quantization_dir / 'final_test_result.json',\n"
+            "    'final_test': final_selection.parent / 'final_test_result.json',\n"
             "    'readiness_json': readiness_dir / 'assessment_readiness.json',\n"
             "    'readiness_markdown': readiness_dir / 'assessment_readiness.md',\n"
             "    'experiment_database': Path(DRIVE_ROOT) / 'backdata/experiments.sqlite3',\n"
             "}\n"
+            "if RUN_LORA:\n"
+            "    expected_outputs['selected_training'] = (\n"
+            "        benchmark_dir / 'selected_training_result.json'\n"
+            "    )\n"
+            "if RUN_QUANTIZATION:\n"
+            "    expected_outputs.update({\n"
+            "        'quantization_table': quantization_dir / 'quantization_comparison.csv',\n"
+            "        'quantization_report': (\n"
+            "            quantization_dir / 'reports/quantization_report.docx'\n"
+            "        ),\n"
+            "        'quantization_selection': quantization_selection,\n"
+            "    })\n"
+            "if distillation_run_dir is not None:\n"
+            "    expected_outputs.update({\n"
+            "        'distillation_metrics': distillation_run_dir / 'metrics.json',\n"
+            "        'distillation_report': (\n"
+            "            distillation_run_dir / 'reports/evaluation_report.docx'\n"
+            "        ),\n"
+            "    })\n"
             "display(pd.DataFrame([\n"
             "    {'artifact': name, 'exists': path.exists(), 'path': str(path)}\n"
             "    for name, path in expected_outputs.items()\n"

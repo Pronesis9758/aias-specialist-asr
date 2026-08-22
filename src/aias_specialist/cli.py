@@ -6,6 +6,7 @@ from pathlib import Path
 import typer
 
 from .config import load_settings
+from .distillation import train_whisper_distillation
 from .environment import doctor as doctor_check
 from .experiments import (
     lock_model_matrix,
@@ -94,6 +95,16 @@ def train_whisper(
     settings = load_settings(config)
     run_dir = train_whisper_lora(settings)
     typer.echo(f"Training completed: {run_dir}")
+
+
+@app.command("train-whisper-distillation")
+def train_distillation(
+    config: Path = typer.Option(..., exists=True, dir_okay=False),
+) -> None:
+    """Distill a locked teacher Whisper model into a smaller locked student model."""
+    settings = load_settings(config)
+    run_dir = train_whisper_distillation(settings)
+    typer.echo(f"Distillation completed: {run_dir}")
 
 
 @app.command("train-selected-whisper")

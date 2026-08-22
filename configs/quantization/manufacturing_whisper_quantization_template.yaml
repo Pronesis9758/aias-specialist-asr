@@ -1,4 +1,5 @@
 quantization:
+  enabled: true
   id: manufacturing-whisper-quantization-v1
   name: 선택 제조 Whisper 모델 양자화 비교
   base_config: configs/manufacturing_private_template.yaml

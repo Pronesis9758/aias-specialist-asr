@@ -699,6 +699,10 @@ def run_quantization_sweep(
     selected_path = Path(selection_path).expanduser().resolve()
     spec = _load_yaml(path)
     section = _section(spec, "quantization")
+    if not bool(section.get("enabled", True)):
+        raise ValueError(
+            "quantization.enabled is false; enable it in the selected quantization spec"
+        )
     settings = _base_settings(path, section)
     selection = _selection_payload(selected_path)
     members = _quantization_members(section, settings, selection)

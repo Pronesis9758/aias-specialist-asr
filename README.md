@@ -8,10 +8,11 @@ WER/CER/용어 정확도 평가, 실행 이력 누적, Word 보고서 생성을 
 
 - 입력 manifest 및 도메인 용어 사전 검증
 - 샘플 fixture 또는 Hugging Face `faster-whisper` 모델 기반 ASR 추론
-- 제조 용어 alias 보정
+- 제조 용어 alias·BM25 Information Retrieval·벡터 NN Search 선택형 보정
 - WER, CER, Domain Term Recall, Latency 측정
 - Whisper Tiny/Base/Small/Medium/Large-v3/Turbo Validation 비교
 - 선택 모델의 FP16·INT8-FP16 양자화 및 자원 사용량 비교
+- Teacher Whisper에서 경량 Student Whisper로 선택형 Knowledge Distillation
 - 사람의 모델·양자화 선택 기록 후 고정 Test 최종평가
 - 실행별 설정/환경/예측/지표/보고서 저장
 - SQLite 실험 레지스트리에 백데이터 누적
@@ -46,6 +47,11 @@ Fine-tuning과 실제 현장 데이터 사용은 데이터·보안·GPU 확인 �
 공개·합성 모드의 자동 선택에는 `human_reviewed: false`와
 `selection_scope: automated_public_proxy`가 기록됩니다. 따라서 정상 동작 확인에는 쓸 수
 있지만 제조 성능이나 심사 최종 결론의 근거로는 인정하지 않습니다.
+
+노트북 상단의 `RUN_QUANTIZATION`, `ENABLE_INFORMATION_RETRIEVAL`,
+`ENABLE_NEAREST_NEIGHBOR`, `RUN_DISTILLATION` 값을 각각 변경하면 네 기능을 독립적으로
+실행할 수 있습니다. 지식 증류는 GPU 비용이 크므로 기본값은 `False`입니다. 세부 YAML
+옵션과 산출물은 `docs/OPTIONAL_MODELING_FEATURES.md`에 정리되어 있습니다.
 
 합성 제조 데이터는 다음 명령으로 Windows에서 재생성할 수 있습니다.
 
@@ -174,6 +180,7 @@ aias model-matrix-lock --matrix ... 모델 행렬 전체 revision 고정
 aias benchmark-models --matrix ...  Validation 모델 비교
 aias select-model ...               사람의 모델 선택과 이유 기록
 aias train-selected-whisper ...     선택된 모델의 LoRA 학습과 Base/Test 비교
+aias train-whisper-distillation ... Teacher 지식을 경량 Student에 증류
 aias quantization-sweep ...         선택 모델의 양자화 비교
 aias select-quantization ...        사람의 양자화 선택과 이유 기록
 aias finalize-evaluation ...        고정 Test 최종평가

@@ -1,4 +1,5 @@
 quantization:
+  enabled: true
   id: fixture-whisper-quantization-v1
   name: Whisper 양자화 비교 자동화 Fixture
   base_config: configs/local_benchmark_base.yaml

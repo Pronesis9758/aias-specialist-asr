@@ -9,7 +9,7 @@ import yaml
 
 from .asr import run_inference
 from .config import Settings
-from .correction import apply_term_correction
+from .correction import apply_term_correction, resolved_correction_options
 from .data import load_domain_terms, prepare_manifest
 from .environment import collect_environment
 from .evaluation import compare_metrics, evaluate_predictions, per_sample_metrics
@@ -135,8 +135,7 @@ def run_pipeline(settings: Settings) -> RunResult:
         corrected_predictions = apply_term_correction(
             baseline_predictions,
             terms,
-            enabled=settings.correction.enabled,
-            case_sensitive=settings.correction.case_sensitive,
+            **resolved_correction_options(settings),
         )
         corrected_predictions = per_sample_metrics(corrected_predictions)
         corrected_predictions.to_csv(

@@ -1,7 +1,9 @@
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
+from aias_specialist.distillation import distillation_loss
 from aias_specialist.training import (
     _extract_input_features,
     _gradient_checkpointing_enabled,
@@ -67,3 +69,45 @@ def test_prediction_frame_uses_aggregate_batch_timing() -> None:
     assert result["latency_seconds"].tolist() == [0.5, 0.5]
     assert result["real_time_factor"].tolist() == [0.2, 0.2]
     assert result["sample_wer"].tolist() == [0.0, 0.0]
+
+
+def test_distillation_loss_supports_independent_hard_and_soft_weights() -> None:
+    torch = pytest.importorskip("torch")
+    student_logits = torch.tensor([[[2.0, 0.1], [0.2, 1.2]]], requires_grad=True)
+    teacher_logits = torch.tensor([[[3.0, 0.1], [0.1, 2.0]]])
+    labels = torch.tensor([[0, 1]])
+
+    hard_only = distillation_loss(
+        student_logits,
+        teacher_logits,
+        labels,
+        hard_label_weight=1.0,
+        temperature=2.0,
+    )
+    blended = distillation_loss(
+        student_logits,
+        teacher_logits,
+        labels,
+        hard_label_weight=0.5,
+        temperature=2.0,
+    )
+
+    assert hard_only.item() > 0.0
+    assert blended.item() > 0.0
+    blended.backward()
+    assert student_logits.grad is not None
+
+
+def test_distillation_loss_validates_options() -> None:
+    torch = pytest.importorskip("torch")
+    logits = torch.zeros((1, 1, 2))
+    labels = torch.zeros((1, 1), dtype=torch.long)
+
+    with pytest.raises(ValueError, match="hard_label_weight"):
+        distillation_loss(
+            logits,
+            logits,
+            labels,
+            hard_label_weight=1.5,
+            temperature=2.0,
+        )

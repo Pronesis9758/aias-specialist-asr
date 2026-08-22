@@ -1,4 +1,5 @@
 quantization:
+  enabled: true
   id: public-proxy-whisper-quantization-v1
   name: 공개 Zeroth 프록시 선택 모델 양자화 비교
   base_config: configs/public_proxy_assessment.yaml
