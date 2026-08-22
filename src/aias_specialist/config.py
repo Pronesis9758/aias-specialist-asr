@@ -61,6 +61,9 @@ class CorrectionConfig:
     nn_device: str = "auto"
     ir_weight: float = 0.5
     nn_weight: float = 0.5
+    require_consensus: bool = False
+    min_score_margin: float = 0.0
+    max_length_ratio: float = 4.0
 
 
 @dataclass(frozen=True)
@@ -176,10 +179,16 @@ def load_settings(config_path: str | Path) -> Settings:
         raise ValueError("correction.max_ngram_tokens must be one or greater")
     min_ir_score = float(information_retrieval.get("min_score", 0.62))
     min_nn_score = float(nearest_neighbor.get("min_score", 0.78))
+    min_score_margin = float(correction.get("min_score_margin", 0.0))
+    max_length_ratio = float(correction.get("max_length_ratio", 4.0))
     if not 0.0 <= min_ir_score <= 1.0:
         raise ValueError("correction.information_retrieval.min_score must be between 0 and 1")
     if not 0.0 <= min_nn_score <= 1.0:
         raise ValueError("correction.nearest_neighbor.min_score must be between 0 and 1")
+    if not 0.0 <= min_score_margin <= 1.0:
+        raise ValueError("correction.min_score_margin must be between 0 and 1")
+    if max_length_ratio < 1.0:
+        raise ValueError("correction.max_length_ratio must be at least 1")
     nn_backend = str(nearest_neighbor.get("backend", "char_ngram")).strip().lower()
     if nn_backend not in {"char_ngram", "transformers"}:
         raise ValueError(
@@ -279,6 +288,9 @@ def load_settings(config_path: str | Path) -> Settings:
             nn_device=str(nearest_neighbor.get("device", "auto")),
             ir_weight=float(information_retrieval.get("weight", 0.5)),
             nn_weight=float(nearest_neighbor.get("weight", 0.5)),
+            require_consensus=bool(correction.get("require_consensus", False)),
+            min_score_margin=min_score_margin,
+            max_length_ratio=max_length_ratio,
         ),
         training=TrainingConfig(
             enabled=bool(training.get("enabled", False)),

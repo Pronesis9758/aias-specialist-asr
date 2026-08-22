@@ -96,3 +96,24 @@ def test_retrieval_features_can_be_disabled_without_changing_prediction() -> Non
 
     assert unchanged.loc[0, "prediction_text"] == predictions.loc[0, "prediction_text"]
     assert unchanged.loc[0, "correction_count"] == 0
+
+
+def test_hybrid_consensus_rejects_single_method_match() -> None:
+    predictions = pd.DataFrame({"prediction_text": ["콘베이아 모터를 점검합니다."]})
+    terms = load_domain_terms(ROOT / "data/domain_terms/manufacturing_terms.csv")
+
+    corrected = apply_term_correction(
+        predictions,
+        terms,
+        alias_enabled=False,
+        information_retrieval_enabled=True,
+        nearest_neighbor_enabled=True,
+        min_ir_score=0.55,
+        min_nn_score=1.0,
+        require_consensus=True,
+        top_k=1,
+        max_ngram_tokens=1,
+    )
+
+    assert corrected.loc[0, "prediction_text"] == predictions.loc[0, "prediction_text"]
+    assert corrected.loc[0, "correction_count"] == 0

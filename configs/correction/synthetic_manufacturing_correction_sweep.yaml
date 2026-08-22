@@ -1,0 +1,109 @@
+correction_sweep:
+  id: synthetic-manufacturing-correction-sweep-v1
+  name: 합성 제조 음성 Validation 보정 안전성 탐색
+  base_config: configs/synthetic_manufacturing_sample.yaml
+  evaluation_split: validation
+  acceptance:
+    min_cer_absolute_reduction: 0.000001
+    min_wer_absolute_reduction: 0.0
+    min_domain_term_recall_gain: 0.0
+    max_degraded_sample_rate: 0.0
+  candidates:
+    - id: no-correction
+      fallback: true
+      enabled: false
+      alias_enabled: false
+      top_k: 1
+      max_ngram_tokens: 1
+
+    - id: alias-only
+      enabled: true
+      alias_enabled: true
+      top_k: 1
+      max_ngram_tokens: 1
+
+    - id: ir-strict-080
+      enabled: true
+      alias_enabled: false
+      top_k: 1
+      max_ngram_tokens: 1
+      min_score_margin: 0.10
+      max_length_ratio: 1.5
+      information_retrieval:
+        enabled: true
+        min_score: 0.80
+        weight: 1.0
+
+    - id: ir-strict-090
+      enabled: true
+      alias_enabled: false
+      top_k: 1
+      max_ngram_tokens: 1
+      min_score_margin: 0.15
+      max_length_ratio: 1.35
+      information_retrieval:
+        enabled: true
+        min_score: 0.90
+        weight: 1.0
+
+    - id: nn-strict-085
+      enabled: true
+      alias_enabled: false
+      top_k: 1
+      max_ngram_tokens: 1
+      min_score_margin: 0.10
+      max_length_ratio: 1.5
+      nearest_neighbor:
+        enabled: true
+        backend: char_ngram
+        min_score: 0.85
+        weight: 1.0
+
+    - id: nn-strict-092
+      enabled: true
+      alias_enabled: false
+      top_k: 1
+      max_ngram_tokens: 1
+      min_score_margin: 0.15
+      max_length_ratio: 1.35
+      nearest_neighbor:
+        enabled: true
+        backend: char_ngram
+        min_score: 0.92
+        weight: 1.0
+
+    - id: hybrid-consensus
+      enabled: true
+      alias_enabled: false
+      top_k: 1
+      max_ngram_tokens: 1
+      require_consensus: true
+      min_score_margin: 0.10
+      max_length_ratio: 1.5
+      information_retrieval:
+        enabled: true
+        min_score: 0.80
+        weight: 0.5
+      nearest_neighbor:
+        enabled: true
+        backend: char_ngram
+        min_score: 0.85
+        weight: 0.5
+
+    - id: alias-hybrid-consensus
+      enabled: true
+      alias_enabled: true
+      top_k: 1
+      max_ngram_tokens: 1
+      require_consensus: true
+      min_score_margin: 0.10
+      max_length_ratio: 1.5
+      information_retrieval:
+        enabled: true
+        min_score: 0.80
+        weight: 0.5
+      nearest_neighbor:
+        enabled: true
+        backend: char_ngram
+        min_score: 0.85
+        weight: 0.5

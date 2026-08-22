@@ -37,16 +37,19 @@ correction:
   enabled: true
   case_sensitive: false
   alias_enabled: true
-  top_k: 2
-  max_ngram_tokens: 3
+  top_k: 1
+  max_ngram_tokens: 1
+  require_consensus: true
+  min_score_margin: 0.10
+  max_length_ratio: 1.5
   information_retrieval:
-    enabled: true
-    min_score: 0.62
+    enabled: false
+    min_score: 0.80
     weight: 0.5
   nearest_neighbor:
-    enabled: true
+    enabled: false
     backend: char_ngram
-    min_score: 0.78
+    min_score: 0.85
     weight: 0.5
 
 training:
@@ -94,8 +97,8 @@ governance:
 
 assessment:
   model_matrix: configs/benchmarks/synthetic_manufacturing_whisper_models.yaml
-  benchmark_id: synthetic-manufacturing-whisper-model-benchmark-v2
-  quantization_id: synthetic-manufacturing-whisper-quantization-v2
+  benchmark_id: synthetic-manufacturing-whisper-model-benchmark-v3
+  quantization_id: synthetic-manufacturing-whisper-quantization-v3
   hardware_profile: configs/hardware/colab_gpu_validation.yaml
 
 report:

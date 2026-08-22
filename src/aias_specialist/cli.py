@@ -6,6 +6,7 @@ from pathlib import Path
 import typer
 
 from .config import load_settings
+from .correction_sweep import run_correction_sweep, select_correction_candidate
 from .distillation import train_whisper_distillation
 from .environment import doctor as doctor_check
 from .experiments import (
@@ -179,6 +180,44 @@ def select_model(
         human_reviewed=not automated_proxy,
     )
     typer.echo(f"Selection: {path}")
+
+
+@app.command("correction-sweep")
+def correction_sweep(
+    spec: Path = typer.Option(..., exists=True, dir_okay=False),
+    selection: Path = typer.Option(..., exists=True, dir_okay=False),
+) -> None:
+    """Tune safe domain-term correction only on a selected model's validation predictions."""
+    result = run_correction_sweep(spec, selection)
+    typer.echo(f"Correction sweep completed: {result.sweep_id}")
+    typer.echo(f"Comparison: {result.comparison_path}")
+    typer.echo(f"Recommended: {result.recommended_candidate}")
+    typer.echo(f"Report: {result.report_path}")
+
+
+@app.command("select-correction")
+def select_correction(
+    sweep_dir: Path = typer.Option(..., exists=True, file_okay=False),
+    candidate_id: str | None = typer.Option(
+        None,
+        help="Accepted correction candidate ID. Omit to select the highest-ranked candidate.",
+    ),
+    reviewer: str = typer.Option(..., help="Reviewer or labeled automated proxy selector."),
+    reason: str = typer.Option(..., help="Validation metrics and regression-gate rationale."),
+    automated_proxy: bool = typer.Option(
+        False,
+        help="Mark selection as synthetic/public automation rather than human approval.",
+    ),
+) -> None:
+    """Record an accepted validation correction policy with a safe fallback."""
+    path = select_correction_candidate(
+        sweep_dir,
+        candidate_id,
+        reviewer=reviewer,
+        reason=reason,
+        human_reviewed=not automated_proxy,
+    )
+    typer.echo(f"Correction selection: {path}")
 
 
 @app.command("quantization-sweep")

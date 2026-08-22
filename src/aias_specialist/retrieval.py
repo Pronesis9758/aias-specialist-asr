@@ -208,6 +208,9 @@ def retrieve_term_corrections(
     nn_device: str,
     ir_weight: float,
     nn_weight: float,
+    require_consensus: bool,
+    min_score_margin: float,
+    max_length_ratio: float,
 ) -> tuple[str, list[dict[str, Any]]]:
     if not information_retrieval_enabled and not nearest_neighbor_enabled:
         return text, []
@@ -259,17 +262,32 @@ def retrieve_term_corrections(
                 max(current[0], ir_score),
                 max(current[1], nn_score),
             )
+        span_candidates: list[RetrievalCandidate] = []
         for canonical, (ir_score, nn_score) in best_by_canonical.items():
             ir_qualified = information_retrieval_enabled and ir_score >= min_ir_score
             nn_qualified = nearest_neighbor_enabled and nn_score >= min_nn_score
             if not ir_qualified and not nn_qualified:
+                continue
+            if (
+                require_consensus
+                and information_retrieval_enabled
+                and nearest_neighbor_enabled
+                and not (ir_qualified and nn_qualified)
+            ):
+                continue
+            source_length = len(normalized_source.replace(" ", ""))
+            canonical_length = len(_normalize(canonical, case_sensitive).replace(" ", ""))
+            length_ratio = max(source_length, canonical_length) / max(
+                min(source_length, canonical_length), 1
+            )
+            if length_ratio > max_length_ratio:
                 continue
             combined = (
                 (ir_weight * ir_score if information_retrieval_enabled else 0.0)
                 + (nn_weight * nn_score if nearest_neighbor_enabled else 0.0)
             ) / weight_total
             method = "hybrid" if ir_qualified and nn_qualified else "ir" if ir_qualified else "nn"
-            candidates.append(
+            span_candidates.append(
                 RetrievalCandidate(
                     start=start,
                     end=end,
@@ -281,6 +299,11 @@ def retrieve_term_corrections(
                     method=method,
                 )
             )
+        span_candidates.sort(key=lambda item: item.combined_score, reverse=True)
+        if span_candidates:
+            runner_up = span_candidates[1].combined_score if len(span_candidates) > 1 else 0.0
+            if span_candidates[0].combined_score - runner_up >= min_score_margin:
+                candidates.append(span_candidates[0])
 
     ranked = sorted(
         candidates,

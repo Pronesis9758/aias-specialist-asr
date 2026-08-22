@@ -26,6 +26,9 @@ def correction_options(config: Any) -> dict[str, Any]:
         "nn_device": config.nn_device,
         "ir_weight": config.ir_weight,
         "nn_weight": config.nn_weight,
+        "require_consensus": config.require_consensus,
+        "min_score_margin": config.min_score_margin,
+        "max_length_ratio": config.max_length_ratio,
     }
 
 
@@ -75,6 +78,9 @@ def apply_term_correction(
     nn_device: str = "auto",
     ir_weight: float = 0.5,
     nn_weight: float = 0.5,
+    require_consensus: bool = False,
+    min_score_margin: float = 0.0,
+    max_length_ratio: float = 4.0,
 ) -> pd.DataFrame:
     output = predictions.copy()
     pairs = _alias_pairs(terms)
@@ -116,6 +122,9 @@ def apply_term_correction(
                 nn_device=nn_device,
                 ir_weight=ir_weight,
                 nn_weight=nn_weight,
+                require_consensus=require_consensus,
+                min_score_margin=min_score_margin,
+                max_length_ratio=max_length_ratio,
             )
             applied.extend(retrieved)
         corrected_texts.append(corrected)

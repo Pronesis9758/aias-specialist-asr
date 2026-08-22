@@ -1,5 +1,5 @@
 benchmark:
-  id: synthetic-manufacturing-whisper-model-benchmark-v2
+  id: synthetic-manufacturing-whisper-model-benchmark-v3
   name: 합성 제조 음성 Validation 기반 Whisper 기능 비교
   base_config: configs/synthetic_manufacturing_sample.yaml
   evaluation_split: validation
