@@ -108,3 +108,36 @@ def test_colab_drive_mount_is_idempotent_and_explains_popup_failure() -> None:
     assert "accounts.google.com 화면이 검게" in drive_cell
     assert "일반 Chrome" in drive_cell
     assert "if not DRIVE_MY_DRIVE.is_dir():" in drive_cell
+
+
+def test_colab_experiment_ids_support_reuse_or_one_shared_timestamp() -> None:
+    notebook = nbformat.read(NOTEBOOK, as_version=4)
+    mode_cell = next(
+        cell.source
+        for cell in notebook.cells
+        if cell.cell_type == "code" and "FORCE_NEW_EXPERIMENT" in cell.source
+    )
+
+    assert "FORCE_NEW_EXPERIMENT = False" in mode_cell
+    assert 'datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")' in mode_cell
+    assert 'f"{design_id}-{EXPERIMENT_SESSION_ID}"' in mode_cell
+    assert 'BENCHMARK_ID = experiment_id(mode["benchmark_id"])' in mode_cell
+    assert 'QUANTIZATION_ID = experiment_id(mode["quantization_id"])' in mode_cell
+
+
+def test_colab_runtime_specs_share_the_selected_experiment_ids() -> None:
+    notebook = nbformat.read(NOTEBOOK, as_version=4)
+    runtime_cell = next(
+        cell.source
+        for cell in notebook.cells
+        if cell.cell_type == "code" and "runtime_correction_sweep_path" in cell.source
+    )
+
+    assert 'runtime_config.setdefault("assessment", {})["benchmark_id"] = BENCHMARK_ID' in (
+        runtime_cell
+    )
+    assert 'runtime_config["assessment"]["quantization_id"] = QUANTIZATION_ID' in runtime_cell
+    assert 'runtime_matrix["benchmark"]["id"] = BENCHMARK_ID' in runtime_cell
+    assert 'runtime_quantization["quantization"]["id"] = QUANTIZATION_ID' in runtime_cell
+    assert "correction_sweep_id = experiment_id(" in runtime_cell
+    assert "CORRECTION_SWEEP_SPEC = str(runtime_correction_sweep_path)" in runtime_cell
