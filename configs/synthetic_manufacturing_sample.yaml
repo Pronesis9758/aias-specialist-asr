@@ -94,8 +94,8 @@ governance:
 
 assessment:
   model_matrix: configs/benchmarks/synthetic_manufacturing_whisper_models.yaml
-  benchmark_id: synthetic-manufacturing-whisper-model-benchmark-v1
-  quantization_id: synthetic-manufacturing-whisper-quantization-v1
+  benchmark_id: synthetic-manufacturing-whisper-model-benchmark-v2
+  quantization_id: synthetic-manufacturing-whisper-quantization-v2
   hardware_profile: configs/hardware/colab_gpu_validation.yaml
 
 report:
