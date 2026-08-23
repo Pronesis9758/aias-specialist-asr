@@ -8,6 +8,7 @@ from aias_specialist.training import (
     _extract_input_features,
     _gradient_checkpointing_enabled,
     _lora_config_kwargs,
+    _model_load_kwargs,
     _prediction_frame,
 )
 
@@ -37,6 +38,25 @@ def test_whisper_lora_disables_gradient_checkpointing_by_default() -> None:
     assert _gradient_checkpointing_enabled({}) is False
     assert _gradient_checkpointing_enabled({"gradient_checkpointing": False}) is False
     assert _gradient_checkpointing_enabled({"gradient_checkpointing": True}) is True
+
+
+def test_whisper_lora_uses_low_memory_float16_loading_by_default() -> None:
+    torch_stub = SimpleNamespace(float16="fp16", bfloat16="bf16", float32="fp32")
+
+    assert _model_load_kwargs({}, torch_stub) == {
+        "low_cpu_mem_usage": True,
+        "torch_dtype": "fp16",
+    }
+    assert _model_load_kwargs(
+        {"low_cpu_mem_usage": False, "load_dtype": "auto"}, torch_stub
+    ) == {"low_cpu_mem_usage": False}
+
+
+def test_whisper_lora_rejects_unknown_load_dtype() -> None:
+    torch_stub = SimpleNamespace(float16="fp16", bfloat16="bf16", float32="fp32")
+
+    with pytest.raises(ValueError, match="Unsupported training.load_dtype"):
+        _model_load_kwargs({"load_dtype": "int8"}, torch_stub)
 
 
 def test_whisper_features_request_and_preserve_attention_mask() -> None:

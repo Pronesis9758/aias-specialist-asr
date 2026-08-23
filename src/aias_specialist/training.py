@@ -91,6 +91,35 @@ def _gradient_checkpointing_enabled(values: dict[str, Any]) -> bool:
     return bool(values.get("gradient_checkpointing", False))
 
 
+def _model_load_kwargs(values: dict[str, Any], torch_module: Any) -> dict[str, Any]:
+    """Build memory-conscious Transformers loading options for Colab GPU training.
+
+    Loading a large Whisper checkpoint in float32 can temporarily consume more than the
+    standard Colab system-RAM allowance before the Trainer moves it to the GPU.  LoRA does
+    not need float32 base weights, so the default is a single-copy, low-memory float16 load.
+    The options remain explicit in the run snapshot and can be overridden for other hardware.
+    """
+    options: dict[str, Any] = {
+        "low_cpu_mem_usage": bool(values.get("low_cpu_mem_usage", True)),
+    }
+    dtype_name = str(values.get("load_dtype", "float16")).strip().lower()
+    dtype_map = {
+        "float16": torch_module.float16,
+        "fp16": torch_module.float16,
+        "bfloat16": torch_module.bfloat16,
+        "bf16": torch_module.bfloat16,
+        "float32": torch_module.float32,
+        "fp32": torch_module.float32,
+    }
+    if dtype_name == "auto":
+        return options
+    if dtype_name not in dtype_map:
+        supported = "auto, float16, bfloat16, float32"
+        raise ValueError(f"Unsupported training.load_dtype={dtype_name!r}; use one of: {supported}")
+    options["torch_dtype"] = dtype_map[dtype_name]
+    return options
+
+
 def _decode_prediction_text(prediction_output: Any, processor: Any) -> list[str]:
     prediction_ids = prediction_output.predictions
     if isinstance(prediction_ids, tuple):
@@ -268,7 +297,11 @@ def train_whisper_lora(settings: Settings) -> Path:
             language=settings.model.language,
             task="transcribe",
         )
-        model = WhisperForConditionalGeneration.from_pretrained(repo_id, revision=revision)
+        model = WhisperForConditionalGeneration.from_pretrained(
+            repo_id,
+            revision=revision,
+            **_model_load_kwargs(values, torch),
+        )
         model.generation_config.language = settings.model.language
         model.generation_config.task = "transcribe"
         model.generation_config.forced_decoder_ids = None

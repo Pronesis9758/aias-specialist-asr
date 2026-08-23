@@ -71,9 +71,13 @@ training:
   revision: main
   method: lora
   output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/synthetic-manufacturing-whisper-lora-v3
-  train_batch_size: 4
-  eval_batch_size: 4
-  gradient_accumulation_steps: 2
+  # large-v3 선택 시 표준 Colab T4의 12.7 GB 시스템 RAM과 15 GB VRAM 피크를
+  # 낮추도록 base weight를 단일 float16 사본으로 읽고 micro-batch를 1로 제한한다.
+  low_cpu_mem_usage: true
+  load_dtype: float16
+  train_batch_size: 1
+  eval_batch_size: 1
+  gradient_accumulation_steps: 8
   gradient_checkpointing: false
   learning_rate: 0.0001
   max_steps: 30
