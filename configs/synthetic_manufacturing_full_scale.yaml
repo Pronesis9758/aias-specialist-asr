@@ -81,8 +81,8 @@ training:
   train_batch_size: 4
   eval_batch_size: 4
   gradient_accumulation_steps: 2
-  # log-Mel 특징 추출을 CPU 4개 프로세스로 병렬화합니다.
-  preprocess_num_proc: 4
+  # 대용량 log-Mel 배열의 multiprocessing 교착을 피하고 split별 단일 worker로 처리합니다.
+  preprocess_num_proc: 1
   gradient_checkpointing: false
   learning_rate: 0.0001
   max_steps: 225
