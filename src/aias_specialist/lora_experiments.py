@@ -162,14 +162,16 @@ def run_lora_learning_curve(spec_path: str | Path) -> Path:
         for model in models:
             member_id = f"{stage['id']}__{model['id']}"
             result_path = result_dir / f"{member_id}.json"
-            config_path = _write_run_config(
-                raw_base=settings.raw,
-                settings=settings,
-                model=model,
-                stage=stage,
-                group_dir=group_dir,
-            )
             if not result_path.exists():
+                # Never overwrite the config belonging to an already completed member;
+                # its run snapshot and worker result must remain an immutable pair.
+                config_path = _write_run_config(
+                    raw_base=settings.raw,
+                    settings=settings,
+                    model=model,
+                    stage=stage,
+                    group_dir=group_dir,
+                )
                 print(
                     f"[lora-curve] stage={stage['id']} model={model['id']} starting",
                     flush=True,

@@ -92,6 +92,9 @@ training:
   logging_steps: 10
   save_total_limit: 2
   resume_from_checkpoint: false
+  # 고정 step 학습곡선은 최종 Base/LoRA 비교가 전체 Validation을 수행하므로 중복 평가를 생략합니다.
+  evaluate_during_training: false
+  repeat_final_evaluation: false
 
 distillation:
   enabled: false

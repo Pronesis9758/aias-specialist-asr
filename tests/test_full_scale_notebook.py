@@ -1,9 +1,11 @@
 from pathlib import Path
 
 import nbformat
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks/colab_full_scale_performance.ipynb"
+FULL_CONFIG = ROOT / "configs/synthetic_manufacturing_full_scale.yaml"
 
 
 def test_full_scale_notebook_has_cost_gates_and_test_once_contract() -> None:
@@ -29,3 +31,13 @@ def test_full_scale_notebook_explains_synthetic_evidence_limit() -> None:
     assert "생산 준비 완료를 주장" in source
     assert "실제 배포 전 승인된 shadow test" in source
     assert "Validation" in source
+
+
+def test_full_scale_a100_config_keeps_effective_batch_and_avoids_duplicate_eval() -> None:
+    config = yaml.safe_load(FULL_CONFIG.read_text(encoding="utf-8"))
+    training = config["training"]
+
+    assert training["train_batch_size"] * training["gradient_accumulation_steps"] == 8
+    assert training["preprocess_num_proc"] == 1
+    assert training["evaluate_during_training"] is False
+    assert training["repeat_final_evaluation"] is False

@@ -430,6 +430,8 @@ def train_whisper_lora(settings: Settings) -> Path:
             reference_text = processor.batch_decode(label_ids, skip_special_tokens=True)
             return {"wer": float(wer(reference_text, prediction_text))}
 
+        evaluate_during_training = bool(values.get("evaluate_during_training", True))
+        repeat_final_evaluation = bool(values.get("repeat_final_evaluation", True))
         argument_values: dict[str, Any] = {
             "output_dir": str(output_dir),
             "per_device_train_batch_size": int(values.get("train_batch_size", 4)),
@@ -446,7 +448,7 @@ def train_whisper_lora(settings: Settings) -> Path:
             "eval_steps": int(values.get("eval_steps", 50)),
             "logging_steps": int(values.get("logging_steps", 10)),
             "save_total_limit": int(values.get("save_total_limit", 3)),
-            "load_best_model_at_end": True,
+            "load_best_model_at_end": evaluate_during_training,
             "metric_for_best_model": "wer",
             "greater_is_better": False,
             "report_to": [],
@@ -459,8 +461,8 @@ def train_whisper_lora(settings: Settings) -> Path:
         evaluation_key = (
             "eval_strategy" if "eval_strategy" in signature.parameters else "evaluation_strategy"
         )
-        argument_values[evaluation_key] = "steps"
-        argument_values["save_strategy"] = "steps"
+        argument_values[evaluation_key] = "steps" if evaluate_during_training else "no"
+        argument_values["save_strategy"] = "steps" if evaluate_during_training else "no"
         arguments = Seq2SeqTrainingArguments(**argument_values)
 
         trainer_values: dict[str, Any] = {
@@ -484,7 +486,9 @@ def train_whisper_lora(settings: Settings) -> Path:
         resume = _checkpoint(output_dir, str(values.get("resume_from_checkpoint", "auto")))
         store.event(run_id, "training", "started", f"resume={resume or 'none'}")
         train_result = trainer.train(resume_from_checkpoint=resume)
-        eval_metrics = trainer.evaluate()
+        # Learning-curve selection uses the explicit Base/LoRA comparison below. On
+        # fixed-step A100 runs, another generated evaluation here duplicates that work.
+        eval_metrics = trainer.evaluate() if repeat_final_evaluation else {}
         store.event(
             run_id,
             "training",
@@ -555,7 +559,7 @@ def train_whisper_lora(settings: Settings) -> Path:
             "adapter_dir": str(adapter_dir),
             "trainer_checkpoint_dir": str(output_dir),
             "best_checkpoint": trainer.state.best_model_checkpoint,
-            "best_validation_wer": float(eval_metrics.get("eval_wer", 0.0)),
+            "best_validation_wer": float(eval_metrics.get("eval_wer", lora_metrics["wer"])),
             "train_samples": len(train_dataset),
             "validation_samples": len(eval_dataset),
             "evaluation_split": comparison_split,
