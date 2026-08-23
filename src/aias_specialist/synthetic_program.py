@@ -341,7 +341,12 @@ def _add_noise(path: Path, snr_db: float | None, hum_hz: float, seed: int) -> No
         writer.writeframes(samples.tobytes())
 
 
-async def _synthesize_one(row: dict[str, str], output_dir: Path, retries: int = 3) -> None:
+async def _synthesize_one(
+    row: dict[str, str],
+    output_dir: Path,
+    retries: int = 3,
+    request_timeout_seconds: float = 30.0,
+) -> None:
     try:
         import edge_tts
     except ImportError as exc:
@@ -363,7 +368,12 @@ async def _synthesize_one(row: dict[str, str], output_dir: Path, retries: int = 
                 rate=row["tts_rate"],
                 pitch=row["tts_pitch"],
             )
-            await communicate.save(str(mp3_path))
+            # Edge TTS occasionally leaves a websocket open without returning an error.  Bound
+            # each request so one stalled sample cannot block all 7,200 synthesis tasks forever.
+            await asyncio.wait_for(
+                communicate.save(str(mp3_path)),
+                timeout=request_timeout_seconds,
+            )
             subprocess.run(
                 [
                     ffmpeg,
@@ -429,16 +439,28 @@ async def _synthesize_one(row: dict[str, str], output_dir: Path, retries: int = 
                 int(hashlib.sha256(row["sample_id"].encode()).hexdigest()[:8], 16),
             )
             return
-        except Exception:
+        except Exception as exc:
             mp3_path.unlink(missing_ok=True)
             raw_path.unlink(missing_ok=True)
             audio_path.unlink(missing_ok=True)
             if attempt == retries:
                 raise
+            print(
+                "[synthetic-tts] retry "
+                f"sample_id={row['sample_id']} attempt={attempt}/{retries} "
+                f"error={type(exc).__name__}: {exc}",
+                flush=True,
+            )
             await asyncio.sleep(2**attempt)
 
 
-async def _synthesize_all(plan: pd.DataFrame, output_dir: Path, concurrency: int) -> None:
+async def _synthesize_all(
+    plan: pd.DataFrame,
+    output_dir: Path,
+    concurrency: int,
+    request_timeout_seconds: float,
+    progress_every: int,
+) -> None:
     semaphore = asyncio.Semaphore(concurrency)
     completed = 0
     lock = asyncio.Lock()
@@ -446,10 +468,14 @@ async def _synthesize_all(plan: pd.DataFrame, output_dir: Path, concurrency: int
     async def guarded(row: dict[str, str]) -> None:
         nonlocal completed
         async with semaphore:
-            await _synthesize_one(row, output_dir)
+            await _synthesize_one(
+                row,
+                output_dir,
+                request_timeout_seconds=request_timeout_seconds,
+            )
         async with lock:
             completed += 1
-            if completed % 25 == 0 or completed == len(plan):
+            if completed % progress_every == 0 or completed == len(plan):
                 print(f"[synthetic-tts] completed={completed}/{len(plan)}", flush=True)
 
     await asyncio.gather(*(guarded(row) for row in plan.astype(str).to_dict("records")))
@@ -464,7 +490,23 @@ def synthesize_dataset(spec_path: str | Path, concurrency: int = 4) -> Path:
         plan_path = write_dataset_plan(path)
     plan = pd.read_csv(plan_path, dtype=str).fillna("")
     validate_dataset_plan(plan, section)
-    asyncio.run(_synthesize_all(plan, output_dir, max(1, concurrency)))
+    request_timeout_seconds = float(section.get("request_timeout_seconds", 30.0))
+    progress_every = max(1, int(section.get("progress_every", 10)))
+    print(
+        "[synthetic-tts] start "
+        f"samples={len(plan)} concurrency={max(1, concurrency)} "
+        f"request_timeout_seconds={request_timeout_seconds:g}",
+        flush=True,
+    )
+    asyncio.run(
+        _synthesize_all(
+            plan,
+            output_dir,
+            max(1, concurrency),
+            request_timeout_seconds,
+            progress_every,
+        )
+    )
 
     durations: list[float] = []
     digests: list[str] = []

@@ -3,6 +3,10 @@ synthetic_dataset:
   output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/synthetic/manufacturing_7200
   domain_terms: data/domain_terms/manufacturing_terms.csv
   seed: 20260823
+  # Edge TTS websocket가 무응답 상태로 남아 전체 생성이 멈추는 것을 방지합니다.
+  request_timeout_seconds: 30
+  # 대규모 생성에서 진행 상태를 빠르게 확인하도록 10개마다 로그를 남깁니다.
+  progress_every: 10
   split_counts:
     train: 6000
     validation: 600

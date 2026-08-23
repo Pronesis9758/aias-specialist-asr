@@ -1,6 +1,15 @@
+import asyncio
+import sys
+import types
 from pathlib import Path
 
-from aias_specialist.synthetic_program import build_dataset_plan, load_synthetic_spec
+import pytest
+
+from aias_specialist.synthetic_program import (
+    _synthesize_one,
+    build_dataset_plan,
+    load_synthetic_spec,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "configs/data/synthetic_manufacturing_7200.yaml"
@@ -49,3 +58,43 @@ def test_full_scale_spec_records_expected_duration_targets() -> None:
         .to_dict()
     )
     assert hours == {"train": 10.0, "validation": 1.0, "test": 1.0}
+    assert section["request_timeout_seconds"] == 30
+    assert section["progress_every"] == 10
+
+
+def test_edge_tts_request_timeout_prevents_indefinite_hang(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class HangingCommunicate:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        async def save(self, _path: str) -> None:
+            await asyncio.Event().wait()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "edge_tts",
+        types.SimpleNamespace(Communicate=HangingCommunicate),
+    )
+    monkeypatch.setattr("aias_specialist.synthetic_program.shutil.which", lambda _name: "ffmpeg")
+    row = {
+        "sample_id": "timeout-sample",
+        "audio_path": "train/timeout.wav",
+        "spoken_text": "체결 토크를 확인합니다",
+        "tts_voice": "ko-KR-SunHiNeural",
+        "tts_rate": "+0%",
+        "tts_pitch": "+0Hz",
+    }
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(
+            _synthesize_one(
+                row,
+                tmp_path,
+                retries=1,
+                request_timeout_seconds=0.01,
+            )
+        )
+
+    assert not (tmp_path / "train/timeout.partial.mp3").exists()
