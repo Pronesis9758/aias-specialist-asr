@@ -37,6 +37,8 @@ MODEL_KEYS = {
     "beam_size",
     "initial_prompt",
     "hotwords",
+    "vad_filter",
+    "vad_min_silence_duration_ms",
 }
 
 
@@ -149,6 +151,8 @@ def _candidate_model(
         "beam_size": settings.model.beam_size,
         "initial_prompt": settings.model.initial_prompt,
         "hotwords": settings.model.hotwords,
+        "vad_filter": settings.model.vad_filter,
+        "vad_min_silence_duration_ms": settings.model.vad_min_silence_duration_ms,
     }
     model.update({key: value for key, value in candidate.items() if key in MODEL_KEYS})
     local_dir = Path(str(model["local_dir"])).expanduser()
@@ -443,6 +447,9 @@ def _lock_members(settings: Settings, members: list[dict[str, Any]], role: str) 
         if model.get("backend") == "fixture":
             continue
         repo_id = str(model["repo_id"])
+        if Path(repo_id).expanduser().is_dir():
+            print(f"[model-lock] local merged model; skip Hub resolution: {repo_id}", flush=True)
+            continue
         requests[repo_id] = {
             "repo_id": repo_id,
             "revision": str(model.get("revision", "main")),
@@ -877,6 +884,15 @@ def run_final_evaluation(
 ) -> dict[str, Any]:
     selected_path = Path(selection_path).expanduser().resolve()
     base_path = Path(base_config_path).expanduser().resolve()
+    existing_result_path = selected_path.parent / "final_test_result.json"
+    if existing_result_path.exists():
+        cached = json.loads(existing_result_path.read_text(encoding="utf-8"))
+        cached["cache_reused"] = True
+        print(
+            "[final-test] immutable result already exists; reusing without Test inference",
+            flush=True,
+        )
+        return cached
     selection = _selection_payload(selected_path)
     settings = load_settings(base_path)
     raw = _absolute_base_config(settings.raw, settings)
@@ -906,7 +922,7 @@ def run_final_evaluation(
         "quality_target_pass": bool(result.metrics["quality_gate"]["overall_pass"]),
         "human_review_required": True,
     }
-    write_json(selected_path.parent / "final_test_result.json", summary)
+    write_json(existing_result_path, summary)
     return summary
 
 

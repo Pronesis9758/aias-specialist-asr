@@ -95,8 +95,12 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
     transcribe_options: dict[str, object] = {
         "language": settings.model.language,
         "beam_size": settings.model.beam_size,
-        "vad_filter": True,
+        "vad_filter": settings.model.vad_filter,
     }
+    if settings.model.vad_filter:
+        transcribe_options["vad_parameters"] = {
+            "min_silence_duration_ms": settings.model.vad_min_silence_duration_ms
+        }
     if settings.model.initial_prompt:
         transcribe_options["initial_prompt"] = settings.model.initial_prompt
     if settings.model.hotwords:

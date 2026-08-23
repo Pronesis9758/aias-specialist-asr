@@ -37,6 +37,8 @@ class ModelConfig:
     beam_size: int = 5
     initial_prompt: str | None = None
     hotwords: str | None = None
+    vad_filter: bool = True
+    vad_min_silence_duration_ms: int = 500
 
 
 @dataclass(frozen=True)
@@ -292,6 +294,10 @@ def load_settings(config_path: str | Path) -> Settings:
             beam_size=int(model.get("beam_size", 5)),
             initial_prompt=(str(model["initial_prompt"]) if model.get("initial_prompt") else None),
             hotwords=(str(model["hotwords"]) if model.get("hotwords") else None),
+            vad_filter=bool(model.get("vad_filter", True)),
+            vad_min_silence_duration_ms=int(
+                model.get("vad_min_silence_duration_ms", 500)
+            ),
         ),
         evaluation=EvaluationConfig(
             split=evaluation_split,

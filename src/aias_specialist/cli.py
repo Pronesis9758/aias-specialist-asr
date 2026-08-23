@@ -7,8 +7,10 @@ import typer
 
 from .config import load_settings
 from .correction_sweep import run_correction_sweep, select_correction_candidate
+from .decoding_experiments import run_selected_lora_decoding_sweep
 from .distillation import train_whisper_distillation
 from .environment import doctor as doctor_check
+from .error_mining import mine_domain_term_errors
 from .experiments import (
     lock_model_matrix,
     run_final_evaluation,
@@ -18,10 +20,14 @@ from .experiments import (
     train_selected_whisper_lora,
 )
 from .hf_data import prepare_hf_dataset
+from .lora_experiments import run_lora_learning_curve
+from .lora_merge import merge_selected_lora
 from .models import download_baseline_model, resolve_model_lock
+from .ondevice import select_deployment_profiles
 from .pipeline import run_pipeline
 from .readiness import write_assessment_readiness
 from .store import ExperimentStore
+from .synthetic_program import synthesize_dataset, write_dataset_plan
 from .training import train_whisper_lora
 
 app = typer.Typer(
@@ -74,6 +80,44 @@ def prepare_hf(
     typer.echo(f"Manifest: {manifest}")
 
 
+@app.command("plan-synthetic-dataset")
+def plan_synthetic_dataset(
+    spec: Path = typer.Option(
+        Path("configs/data/synthetic_manufacturing_7200.yaml"),
+        exists=True,
+        dir_okay=False,
+    ),
+) -> None:
+    """Create and validate the deterministic 7,200-item synthetic data plan."""
+    path = write_dataset_plan(spec)
+    typer.echo(f"Synthetic plan: {path}")
+
+
+@app.command("synthesize-dataset")
+def synthesize_synthetic_dataset(
+    spec: Path = typer.Option(
+        Path("configs/data/synthetic_manufacturing_7200.yaml"),
+        exists=True,
+        dir_okay=False,
+    ),
+    concurrency: int = typer.Option(4, min=1, max=8),
+) -> None:
+    """Generate resumable Edge TTS WAV files and a verified final manifest."""
+    path = synthesize_dataset(spec, concurrency=concurrency)
+    typer.echo(f"Synthetic manifest: {path}")
+
+
+@app.command("mine-term-errors")
+def mine_term_errors(
+    predictions: Path = typer.Option(..., exists=True, dir_okay=False),
+    terms: Path = typer.Option(..., exists=True, dir_okay=False),
+    output: Path = typer.Option(..., dir_okay=False),
+) -> None:
+    """Mine missing manufacturing terms and likely recognized forms from validation."""
+    path = mine_domain_term_errors(predictions, terms, output)
+    typer.echo(f"Term error candidates: {path}")
+
+
 @app.command("run")
 def run(
     config: Path = typer.Option(Path("configs/local_smoke.yaml"), exists=True, dir_okay=False),
@@ -116,6 +160,39 @@ def train_selected_whisper(
     """LoRA fine-tune the human-selected benchmark model."""
     result = train_selected_whisper_lora(selection, config)
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+@app.command("lora-learning-curve")
+def lora_learning_curve(
+    spec: Path = typer.Option(
+        Path("configs/training/synthetic_manufacturing_lora_a100.yaml"),
+        exists=True,
+        dir_okay=False,
+    ),
+) -> None:
+    """Compare Medium, Turbo, and Large-v3 LoRA stages on validation only."""
+    comparison = run_lora_learning_curve(spec)
+    typer.echo(f"LoRA learning curve: {comparison}")
+
+
+@app.command("merge-selected-lora")
+def merge_lora(
+    selection: Path = typer.Option(..., exists=True, dir_okay=False),
+    config: Path = typer.Option(..., exists=True, dir_okay=False),
+) -> None:
+    """Merge the selected PEFT adapter into a deployable Transformers checkpoint."""
+    merged = merge_selected_lora(selection, config)
+    typer.echo(f"Merged LoRA model: {merged}")
+
+
+@app.command("decoding-sweep-selected-lora")
+def decoding_sweep_selected_lora(
+    selection: Path = typer.Option(..., exists=True, dir_okay=False),
+    config: Path = typer.Option(..., exists=True, dir_okay=False),
+) -> None:
+    """Tune beam, prompt, hotwords, and VAD on the fixed validation split."""
+    selected = run_selected_lora_decoding_sweep(selection, config)
+    typer.echo(f"Decoding selection: {selected}")
 
 
 @app.command()
@@ -269,6 +346,19 @@ def finalize_evaluation(
     """Run one final held-out test evaluation after model and precision selection."""
     result = run_final_evaluation(selection, config)
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+@app.command("select-deployment-profiles")
+def deployment_profiles(
+    comparison: Path = typer.Option(..., exists=True, dir_okay=False),
+    profiles: Path = typer.Option(
+        Path("configs/deployment/ondevice_profiles.yaml"), exists=True, dir_okay=False
+    ),
+    output_dir: Path = typer.Option(..., file_okay=False),
+) -> None:
+    """Select accuracy-first and feasible on-device candidates without relaxing gates."""
+    result = select_deployment_profiles(comparison, profiles, output_dir)
+    typer.echo(f"Deployment selections: {result}")
 
 
 @app.command("assessment-audit")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -159,6 +160,27 @@ def load_model_lock(settings: Settings) -> dict[str, Any]:
 
 
 def download_baseline_model(settings: Settings) -> tuple[Path, str]:
+    local_source = Path(settings.model.repo_id).expanduser()
+    if local_source.is_dir():
+        digest = hashlib.sha256()
+        for item in sorted(local_source.rglob("*")):
+            if item.is_file():
+                digest.update(item.relative_to(local_source).as_posix().encode("utf-8"))
+                digest.update(str(item.stat().st_size).encode("ascii"))
+        revision = f"local-{digest.hexdigest()[:16]}"
+        if settings.model.format == "transformers":
+            required_files = [
+                settings.model.local_dir / "config.json",
+                settings.model.local_dir / "model.bin",
+                settings.model.local_dir / "tokenizer.json",
+            ]
+            if all(path.exists() and path.stat().st_size > 0 for path in required_files):
+                print(f"[model-cache] reuse {settings.model.local_dir}", flush=True)
+                return settings.model.local_dir, revision
+            return _convert_transformers_model(
+                settings, revision, source_model=local_source.resolve()
+            ), revision
+        return local_source.resolve(), revision
     lock = load_model_lock(settings)
     baseline = lock["models"][settings.model.repo_id]
     revision = str(baseline["resolved_revision"])
@@ -186,7 +208,11 @@ def download_baseline_model(settings: Settings) -> tuple[Path, str]:
     return local_dir, revision
 
 
-def _convert_transformers_model(settings: Settings, revision: str) -> Path:
+def _convert_transformers_model(
+    settings: Settings,
+    revision: str,
+    source_model: Path | None = None,
+) -> Path:
     """Convert an immutable Transformers Whisper checkpoint into a CT2 runtime model."""
     quantization = settings.model.conversion_quantization or "float16"
     local_dir = settings.model.local_dir
@@ -214,8 +240,8 @@ def _convert_transformers_model(settings: Settings, revision: str) -> Path:
             flush=True,
         )
         converter = TransformersConverter(
-            settings.model.repo_id,
-            revision=revision,
+            str(source_model or settings.model.repo_id),
+            revision=None if source_model else revision,
             copy_files=["tokenizer.json", "preprocessor_config.json"],
             low_cpu_mem_usage=True,
         )

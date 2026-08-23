@@ -201,6 +201,7 @@ def _write_training_summary(
     baseline = metrics["baseline"]
     lora = metrics["lora"]
     improvement = metrics["lora_improvement"]
+    evaluation_split = str(metrics["training"].get("evaluation_split", "test"))
     text = f"""# Training run summary: {run_id}
 
 - Project: {settings.project.name}
@@ -208,13 +209,14 @@ def _write_training_summary(
 - Model: {metrics["training"]["model_repo"]}@{metrics["training"]["model_revision"]}
 - Train samples: {metrics["training"]["train_samples"]}
 - Validation samples: {metrics["training"]["validation_samples"]}
-- Test samples: {baseline["sample_count"]}
-- Base Whisper test WER: {baseline["wer"]:.4f}
-- Best LoRA test WER: {lora["wer"]:.4f}
+- Comparison split: {evaluation_split}
+- Comparison samples: {baseline["sample_count"]}
+- Base Whisper {evaluation_split} WER: {baseline["wer"]:.4f}
+- Best LoRA {evaluation_split} WER: {lora["wer"]:.4f}
 - LoRA WER absolute reduction: {improvement["wer_absolute_reduction"]:.4f}
-- Base Whisper test CER: {baseline["cer"]:.4f}
-- Best LoRA test CER: {lora["cer"]:.4f}
-- Evidence confidence: low (small public general-Korean test split; single seed)
+- Base Whisper {evaluation_split} CER: {baseline["cer"]:.4f}
+- Best LoRA {evaluation_split} CER: {lora["cer"]:.4f}
+- Evidence scope: synthetic validation for tuning, or held-out test only after selection
 - Human review required: transcript labels, privacy approval, domain terms, model trade-offs,
   and final report conclusions
 """
@@ -328,15 +330,37 @@ def train_whisper_lora(settings: Settings) -> Path:
         model = get_peft_model(model, lora)
         model.print_trainable_parameters()
 
-        dataset_frame = prepared[
+        full_dataset_frame = prepared[
             ["sample_id", "audio_path", "reference_text", "split", "source", "consent_status"]
         ].rename(columns={"audio_path": "audio", "reference_text": "sentence"})
+        comparison_split = str(values.get("evaluation_split", "test")).strip().lower()
+        if comparison_split not in {"validation", "test"}:
+            raise ValueError("training.evaluation_split must be validation or test")
+        train_sample_limit = int(values.get("train_sample_limit", 0))
+        if train_sample_limit < 0:
+            raise ValueError("training.train_sample_limit must be zero or greater")
+        train_frame = full_dataset_frame.loc[
+            full_dataset_frame["split"].str.lower().eq("train")
+        ]
+        if train_sample_limit:
+            train_frame = train_frame.head(train_sample_limit)
+        validation_frame = full_dataset_frame.loc[
+            full_dataset_frame["split"].str.lower().eq("validation")
+        ]
+        comparison_source = full_dataset_frame.loc[
+            full_dataset_frame["split"].str.lower().eq(comparison_split)
+        ]
+        # Validation learning-curve runs never open, decode, or featurize Test audio.
+        # Test rows enter this in-memory dataset only for the one final comparison mode.
+        dataset_frame = pd.concat(
+            [train_frame, validation_frame, comparison_source], ignore_index=True
+        ).drop_duplicates(subset=["sample_id"])
         dataset_frame["audio_duration_seconds"] = [
             float(librosa.get_duration(path=path)) for path in dataset_frame["audio"]
         ]
-        test_frame = dataset_frame.loc[dataset_frame["split"].str.lower() == "test"].rename(
-            columns={"audio": "audio_path", "sentence": "reference_text"}
-        )
+        comparison_frame = dataset_frame.loc[
+            dataset_frame["split"].str.lower() == comparison_split
+        ].rename(columns={"audio": "audio_path", "sentence": "reference_text"})
         dataset = Dataset.from_pandas(dataset_frame, preserve_index=False)
 
         def preprocess(record: dict[str, Any]) -> dict[str, Any]:
@@ -352,9 +376,9 @@ def train_whisper_lora(settings: Settings) -> Path:
         eval_dataset = dataset.filter(
             lambda row: row["split"].lower() == "validation"
         ).remove_columns(["split"])
-        test_dataset = dataset.filter(lambda row: row["split"].lower() == "test").remove_columns(
-            ["split"]
-        )
+        comparison_dataset = dataset.filter(
+            lambda row: row["split"].lower() == comparison_split
+        ).remove_columns(["split"])
 
         collator = SpeechSeq2SeqCollator(
             processor=processor,
@@ -440,13 +464,20 @@ def train_whisper_lora(settings: Settings) -> Path:
         trainer.model.eval()
         torch.cuda.empty_cache()
 
-        store.event(run_id, "test_comparison", "started", f"test_samples={len(test_dataset)}")
+        store.event(
+            run_id,
+            "heldout_comparison",
+            "started",
+            f"split={comparison_split}; samples={len(comparison_dataset)}",
+        )
         baseline_started = time.perf_counter()
         with trainer.model.disable_adapter():
-            baseline_output = trainer.predict(test_dataset, metric_key_prefix="base_test")
+            baseline_output = trainer.predict(
+                comparison_dataset, metric_key_prefix=f"base_{comparison_split}"
+            )
         baseline_runtime = time.perf_counter() - baseline_started
         baseline_predictions = _prediction_frame(
-            test_frame,
+            comparison_frame,
             _decode_prediction_text(baseline_output, processor),
             baseline_runtime,
             "base_whisper",
@@ -457,10 +488,12 @@ def train_whisper_lora(settings: Settings) -> Path:
         baseline_metrics = _evaluation_metrics(baseline_predictions, terms)
 
         lora_started = time.perf_counter()
-        lora_output = trainer.predict(test_dataset, metric_key_prefix="lora_test")
+        lora_output = trainer.predict(
+            comparison_dataset, metric_key_prefix=f"lora_{comparison_split}"
+        )
         lora_runtime = time.perf_counter() - lora_started
         lora_predictions = _prediction_frame(
-            test_frame,
+            comparison_frame,
             _decode_prediction_text(lora_output, processor),
             lora_runtime,
             "best_lora",
@@ -479,7 +512,7 @@ def train_whisper_lora(settings: Settings) -> Path:
         )
         write_correction_audit(run_dir, baseline_predictions, corrected_predictions)
         corrected_metrics = _evaluation_metrics(corrected_predictions, terms)
-        store.event(run_id, "test_comparison", "completed")
+        store.event(run_id, "heldout_comparison", "completed", f"split={comparison_split}")
 
         dataset_config = settings.raw.get("dataset", {})
         training_metrics = {
@@ -491,7 +524,9 @@ def train_whisper_lora(settings: Settings) -> Path:
             "best_validation_wer": float(eval_metrics.get("eval_wer", 0.0)),
             "train_samples": len(train_dataset),
             "validation_samples": len(eval_dataset),
-            "test_samples": len(test_dataset),
+            "evaluation_split": comparison_split,
+            "evaluation_samples": len(comparison_dataset),
+            "test_samples": len(comparison_dataset) if comparison_split == "test" else 0,
             "max_steps": int(values.get("max_steps", 500)),
             "seed": settings.project.seed,
             **{f"train_{key}": value for key, value in train_result.metrics.items()},
@@ -507,9 +542,12 @@ def train_whisper_lora(settings: Settings) -> Path:
             "evidence": {
                 "dataset": f"{dataset_config.get('repo_id', 'unknown')}@"
                 f"{dataset_config.get('revision', 'unknown')}",
-                "comparison_population": "identical fixed test split",
-                "confidence": "low",
-                "reason": "small public general-Korean sample and one training seed",
+                "comparison_population": f"identical fixed {comparison_split} split",
+                "confidence": "synthetic_only",
+                "reason": (
+                    "Synthetic speech supports controlled model comparison but does not "
+                    "establish real-factory generalization."
+                ),
             },
         }
         write_json(run_dir / "metrics.json", metrics)

@@ -1,0 +1,41 @@
+synthetic_dataset:
+  id: synthetic-manufacturing-korean-asr-7200-v1
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/synthetic/manufacturing_7200
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  seed: 20260823
+  split_counts:
+    train: 6000
+    validation: 600
+    test: 600
+  target_duration_hours:
+    train: 10.0
+    validation: 1.0
+    test: 1.0
+  # 세 split의 프로필 ID가 겹치지 않으며 총 24개입니다. 이는 실제 사람 24명이 아니라
+  # 음색·속도·피치를 조합한 합성 화자 프로필이므로 실화자 일반화 근거로 사용하지 않습니다.
+  speaker_profiles:
+    train: 16
+    validation: 4
+    test: 4
+  minimum_speaker_profiles: 20
+  minimum_train_occurrences_per_term: 100
+  maximum_train_occurrences_per_term: 200
+  minimum_test_term_occurrences: 1000
+  # 기존 실험에서 자주 틀렸거나 영문·숫자 표기 난도가 높은 용어는 상한인 200회까지
+  # 우선 배치하고, 나머지 용어도 최소 100회 이상 유지합니다.
+  priority_train_occurrences_per_term: 200
+  priority_terms:
+    - 체결 토크
+    - PLC
+    - HMI
+    - CNC 선반
+    - AGV
+    - AOI 검사기
+    - 1호기
+    - 2호기
+    - 3호기
+    - X101
+  voices:
+    - ko-KR-SunHiNeural
+    - ko-KR-InJoonNeural
+    - ko-KR-HyunsuNeural
