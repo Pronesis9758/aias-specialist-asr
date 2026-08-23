@@ -86,8 +86,14 @@ def _write_run_config(
             "train_sample_limit": int(stage["train_samples"]),
             "max_steps": int(stage["max_steps"]),
             "warmup_steps": max(1, int(stage["max_steps"]) // 10),
-            "eval_steps": max(1, int(stage["max_steps"]) // 3),
-            "save_steps": max(1, int(stage["max_steps"]) // 3),
+            "eval_steps": max(
+                1,
+                int(stage.get("eval_steps", int(stage["max_steps"]) // 3)),
+            ),
+            "save_steps": max(
+                1,
+                int(stage.get("save_steps", int(stage["max_steps"]) // 3)),
+            ),
             "resume_from_checkpoint": False,
             "output_dir": str(
                 settings.paths.artifacts_dir.parent

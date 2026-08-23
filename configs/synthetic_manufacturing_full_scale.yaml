@@ -77,9 +77,12 @@ training:
   evaluation_split: validation
   low_cpu_mem_usage: true
   load_dtype: float16
-  train_batch_size: 1
-  eval_batch_size: 1
-  gradient_accumulation_steps: 8
+  # A100 80 GB에서 유효 배치 8은 유지하면서 micro-batch를 키워 GPU 활용률을 높입니다.
+  train_batch_size: 4
+  eval_batch_size: 4
+  gradient_accumulation_steps: 2
+  # log-Mel 특징 추출을 CPU 4개 프로세스로 병렬화합니다.
+  preprocess_num_proc: 4
   gradient_checkpointing: false
   learning_rate: 0.0001
   max_steps: 225

@@ -107,6 +107,14 @@ def _gradient_checkpointing_enabled(values: dict[str, Any]) -> bool:
     return bool(values.get("gradient_checkpointing", False))
 
 
+def _preprocess_num_proc(values: dict[str, Any]) -> int:
+    """Return the number of CPU workers used for Whisper feature extraction."""
+    workers = int(values.get("preprocess_num_proc", 1))
+    if workers < 1:
+        raise ValueError("training.preprocess_num_proc must be at least 1")
+    return workers
+
+
 def _model_load_kwargs(values: dict[str, Any], torch_module: Any) -> dict[str, Any]:
     """Build memory-conscious Transformers loading options for Colab GPU training.
 
@@ -352,16 +360,13 @@ def train_whisper_lora(settings: Settings) -> Path:
         ]
         # Validation learning-curve runs never open, decode, or featurize Test audio.
         # Test rows enter this in-memory dataset only for the one final comparison mode.
-        dataset_frame = pd.concat(
-            [train_frame, validation_frame, comparison_source], ignore_index=True
-        ).drop_duplicates(subset=["sample_id"])
-        dataset_frame["audio_duration_seconds"] = [
-            float(librosa.get_duration(path=path)) for path in dataset_frame["audio"]
+        comparison_frame = comparison_source.copy()
+        comparison_frame["audio_duration_seconds"] = [
+            float(librosa.get_duration(path=path)) for path in comparison_frame["audio"]
         ]
-        comparison_frame = dataset_frame.loc[
-            dataset_frame["split"].str.lower() == comparison_split
-        ].rename(columns={"audio": "audio_path", "sentence": "reference_text"})
-        dataset = Dataset.from_pandas(dataset_frame, preserve_index=False)
+        comparison_frame = comparison_frame.rename(
+            columns={"audio": "audio_path", "sentence": "reference_text"}
+        )
 
         def preprocess(record: dict[str, Any]) -> dict[str, Any]:
             audio, sampling_rate = librosa.load(record["audio"], sr=16_000, mono=True)
@@ -369,16 +374,45 @@ def train_whisper_lora(settings: Settings) -> Path:
             record["labels"] = processor.tokenizer(record["sentence"]).input_ids
             return record
 
-        dataset = dataset.map(preprocess, remove_columns=["audio", "sentence"])
-        train_dataset = dataset.filter(lambda row: row["split"].lower() == "train").remove_columns(
-            ["split"]
+        preprocess_workers = _preprocess_num_proc(values)
+
+        def prepare_split(frame: pd.DataFrame, split_name: str) -> Any:
+            print(
+                f"[training] preprocessing split={split_name}; "
+                f"samples={len(frame)}; workers={preprocess_workers}",
+                flush=True,
+            )
+            split_dataset = Dataset.from_pandas(frame, preserve_index=False)
+            try:
+                return split_dataset.map(
+                    preprocess,
+                    remove_columns=["audio", "sentence", "split"],
+                    num_proc=preprocess_workers,
+                    desc=f"Whisper features ({split_name})",
+                )
+            except Exception:
+                if preprocess_workers == 1:
+                    raise
+                print(
+                    "[training] parallel preprocessing failed; retrying with one worker",
+                    flush=True,
+                )
+                return split_dataset.map(
+                    preprocess,
+                    remove_columns=["audio", "sentence", "split"],
+                    num_proc=1,
+                    desc=f"Whisper features ({split_name}, fallback)",
+                )
+
+        # Build each split independently so large log-Mel arrays are not copied by
+        # Dataset.filter three times. Validation runs also never construct a Test dataset.
+        train_dataset = prepare_split(train_frame, "train")
+        eval_dataset = prepare_split(validation_frame, "validation")
+        comparison_dataset = (
+            eval_dataset
+            if comparison_split == "validation"
+            else prepare_split(comparison_source, comparison_split)
         )
-        eval_dataset = dataset.filter(
-            lambda row: row["split"].lower() == "validation"
-        ).remove_columns(["split"])
-        comparison_dataset = dataset.filter(
-            lambda row: row["split"].lower() == comparison_split
-        ).remove_columns(["split"])
 
         collator = SpeechSeq2SeqCollator(
             processor=processor,
