@@ -35,6 +35,8 @@ class ModelConfig:
     device: str = "auto"
     compute_type: str = "auto"
     beam_size: int = 5
+    initial_prompt: str | None = None
+    hotwords: str | None = None
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,15 @@ class EvaluationConfig:
     split: str = "test"
     warmup_samples: int = 0
     timing_repetitions: int = 1
+
+
+@dataclass(frozen=True)
+class QualityTargetsConfig:
+    enabled: bool = False
+    minimum_domain_term_recall: float = 0.85
+    maximum_cer: float = 0.07
+    maximum_wer: float = 0.15
+    priority: tuple[str, ...] = ("domain_term_recall", "cer", "wer")
 
 
 @dataclass(frozen=True)
@@ -103,6 +114,7 @@ class Settings:
     paths: PathsConfig
     model: ModelConfig
     evaluation: EvaluationConfig
+    quality_targets: QualityTargetsConfig
     correction: CorrectionConfig
     training: TrainingConfig
     distillation: DistillationConfig
@@ -191,9 +203,7 @@ def load_settings(config_path: str | Path) -> Settings:
         raise ValueError("correction.max_length_ratio must be at least 1")
     nn_backend = str(nearest_neighbor.get("backend", "char_ngram")).strip().lower()
     if nn_backend not in {"char_ngram", "transformers"}:
-        raise ValueError(
-            "correction.nearest_neighbor.backend must be char_ngram or transformers"
-        )
+        raise ValueError("correction.nearest_neighbor.backend must be char_ngram or transformers")
     nn_model_repo_id = nearest_neighbor.get("model_repo_id")
     if (
         bool(nearest_neighbor.get("enabled", False))
@@ -222,6 +232,22 @@ def load_settings(config_path: str | Path) -> Settings:
         raise ValueError("evaluation.warmup_samples must be zero or greater")
     if timing_repetitions < 1:
         raise ValueError("evaluation.timing_repetitions must be one or greater")
+
+    quality_targets = raw.get("quality_targets", {})
+    if not isinstance(quality_targets, dict):
+        raise ValueError("Config section 'quality_targets' must be a mapping")
+    minimum_domain_term_recall = float(quality_targets.get("minimum_domain_term_recall", 0.85))
+    maximum_cer = float(quality_targets.get("maximum_cer", 0.07))
+    maximum_wer = float(quality_targets.get("maximum_wer", 0.15))
+    if not 0.0 <= minimum_domain_term_recall <= 1.0:
+        raise ValueError("quality_targets.minimum_domain_term_recall must be between 0 and 1")
+    if not 0.0 <= maximum_cer <= 1.0:
+        raise ValueError("quality_targets.maximum_cer must be between 0 and 1")
+    if not 0.0 <= maximum_wer <= 1.0:
+        raise ValueError("quality_targets.maximum_wer must be between 0 and 1")
+    priority = quality_targets.get("priority", ["domain_term_recall", "cer", "wer"])
+    if not isinstance(priority, list) or priority != ["domain_term_recall", "cer", "wer"]:
+        raise ValueError("quality_targets.priority must be [domain_term_recall, cer, wer]")
 
     governance = raw.get("governance", {})
     if not isinstance(governance, dict):
@@ -264,19 +290,26 @@ def load_settings(config_path: str | Path) -> Settings:
             device=str(model.get("device", "auto")),
             compute_type=str(model.get("compute_type", "auto")),
             beam_size=int(model.get("beam_size", 5)),
+            initial_prompt=(str(model["initial_prompt"]) if model.get("initial_prompt") else None),
+            hotwords=(str(model["hotwords"]) if model.get("hotwords") else None),
         ),
         evaluation=EvaluationConfig(
             split=evaluation_split,
             warmup_samples=warmup_samples,
             timing_repetitions=timing_repetitions,
         ),
+        quality_targets=QualityTargetsConfig(
+            enabled=bool(quality_targets.get("enabled", False)),
+            minimum_domain_term_recall=minimum_domain_term_recall,
+            maximum_cer=maximum_cer,
+            maximum_wer=maximum_wer,
+            priority=tuple(str(metric) for metric in priority),
+        ),
         correction=CorrectionConfig(
             enabled=bool(correction.get("enabled", True)),
             case_sensitive=bool(correction.get("case_sensitive", False)),
             alias_enabled=bool(correction.get("alias_enabled", True)),
-            information_retrieval_enabled=bool(
-                information_retrieval.get("enabled", False)
-            ),
+            information_retrieval_enabled=bool(information_retrieval.get("enabled", False)),
             nearest_neighbor_enabled=bool(nearest_neighbor.get("enabled", False)),
             top_k=top_k,
             max_ngram_tokens=max_ngram_tokens,

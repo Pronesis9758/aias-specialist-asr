@@ -16,9 +16,10 @@ import pandas as pd
 import yaml
 
 from .comparison_reporting import build_comparison_report, create_comparison_chart
-from .config import Settings, load_settings
+from .config import QualityTargetsConfig, Settings, load_settings
 from .models import resolve_model_revisions
 from .pipeline import run_pipeline
+from .quality_targets import quality_target_columns
 from .store import ExperimentStore
 from .training import train_whisper_lora
 from .utils import new_run_id, utc_now, write_json
@@ -34,6 +35,8 @@ MODEL_KEYS = {
     "device",
     "compute_type",
     "beam_size",
+    "initial_prompt",
+    "hotwords",
 }
 
 
@@ -144,6 +147,8 @@ def _candidate_model(
         "device": settings.model.device,
         "compute_type": settings.model.compute_type,
         "beam_size": settings.model.beam_size,
+        "initial_prompt": settings.model.initial_prompt,
+        "hotwords": settings.model.hotwords,
     }
     model.update({key: value for key, value in candidate.items() if key in MODEL_KEYS})
     local_dir = Path(str(model["local_dir"])).expanduser()
@@ -152,6 +157,10 @@ def _candidate_model(
     model["local_dir"] = str(local_dir.resolve())
     if not model.get("conversion_quantization"):
         model.pop("conversion_quantization", None)
+    if not model.get("initial_prompt"):
+        model.pop("initial_prompt", None)
+    if not model.get("hotwords"):
+        model.pop("hotwords", None)
     return model
 
 
@@ -267,11 +276,12 @@ def _completed_row(
     member: dict[str, Any],
     result: dict[str, Any],
     evaluation_split: str,
+    quality_targets: QualityTargetsConfig,
 ) -> dict[str, Any]:
     metrics = result["metrics"]["baseline"]
     run_dir = Path(result["run_dir"])
     metadata = _prediction_metadata(run_dir)
-    return {
+    row = {
         "member_id": member["member_id"],
         "model_id": member["model_id"],
         "variant_id": member["variant_id"],
@@ -301,14 +311,17 @@ def _completed_row(
         "peak_gpu_memory_mb": float(metrics["peak_gpu_memory_mb"]),
         "error": "",
     }
+    row.update(quality_target_columns(metrics, quality_targets))
+    return row
 
 
 def _failed_row(
     member: dict[str, Any],
     evaluation_split: str,
     error: Exception,
+    quality_targets: QualityTargetsConfig,
 ) -> dict[str, Any]:
-    return {
+    row = {
         "member_id": member["member_id"],
         "model_id": member["model_id"],
         "variant_id": member["variant_id"],
@@ -335,6 +348,18 @@ def _failed_row(
         "peak_gpu_memory_mb": 0.0,
         "error": str(error),
     }
+    row.update(
+        quality_target_columns(
+            {
+                "domain_term_recall": 0.0,
+                "domain_term_recall_applicable": False,
+                "cer": 1.0,
+                "wer": 1.0,
+            },
+            quality_targets,
+        )
+    )
+    return row
 
 
 def _load_rows(path: Path) -> dict[str, dict[str, Any]]:
@@ -355,10 +380,33 @@ def _write_comparison(
     completed = frame["status"].eq("completed")
     frame["rank"] = pd.NA
     if completed.any():
-        ranked = frame.loc[completed].sort_values(
-            ["cer", "wer", "aggregate_real_time_factor"],
-            ascending=[True, True, True],
+        completed_frame = frame.loc[completed]
+        targets_enabled = (
+            "quality_targets_enabled" in completed_frame
+            and completed_frame["quality_targets_enabled"]
+            .map(lambda value: str(value).strip().lower() == "true")
+            .any()
         )
+        if targets_enabled:
+            ranked = completed_frame.sort_values(
+                [
+                    "quality_target_pass",
+                    "quality_target_miss_count",
+                    "domain_term_recall_gap",
+                    "cer_gap",
+                    "wer_gap",
+                    "domain_term_recall",
+                    "cer",
+                    "wer",
+                    "aggregate_real_time_factor",
+                ],
+                ascending=[False, True, True, True, True, False, True, True, True],
+            )
+        else:
+            ranked = completed_frame.sort_values(
+                ["cer", "wer", "aggregate_real_time_factor"],
+                ascending=[True, True, True],
+            )
         for rank, index in enumerate(ranked.index, start=1):
             frame.loc[index, "rank"] = rank
     if reference_member:
@@ -457,6 +505,7 @@ def _run_group(
         member_id = member["member_id"]
         existing = rows.get(member_id)
         if existing and existing.get("status") == "completed":
+            existing.update(quality_target_columns(existing, settings.quality_targets))
             run_dir = Path(str(existing.get("run_dir", "")))
             if run_dir.exists():
                 print(
@@ -493,6 +542,7 @@ def _run_group(
                 member=member,
                 result=result,
                 evaluation_split=evaluation_split,
+                quality_targets=settings.quality_targets,
             )
             rows[member_id] = row
             store.upsert_group_member(
@@ -511,7 +561,12 @@ def _run_group(
                 flush=True,
             )
         except Exception as exc:
-            rows[member_id] = _failed_row(member, evaluation_split, exc)
+            rows[member_id] = _failed_row(
+                member,
+                evaluation_split,
+                exc,
+                settings.quality_targets,
+            )
             store.upsert_group_member(
                 group_id=group_id,
                 member_id=member_id,
@@ -788,6 +843,14 @@ def select_experiment_member(
                     "peak_gpu_memory_mb",
                 ]
             },
+            "quality_target_assessment": {
+                "enabled": _python_value(row.get("quality_targets_enabled", False)),
+                "overall_pass": _python_value(row.get("quality_target_pass", False)),
+                "miss_count": _python_value(row.get("quality_target_miss_count", 0)),
+                "domain_term_recall_gap": _python_value(row.get("domain_term_recall_gap", 0.0)),
+                "cer_gap": _python_value(row.get("cer_gap", 0.0)),
+                "wer_gap": _python_value(row.get("wer_gap", 0.0)),
+            },
             "final_test_required": True,
         }
     }
@@ -839,6 +902,8 @@ def run_final_evaluation(
         "run_dir": str(result.run_dir),
         "report_path": str(result.report_path),
         "metrics": result.metrics,
+        "quality_gate": result.metrics["quality_gate"],
+        "quality_target_pass": bool(result.metrics["quality_gate"]["overall_pass"]),
         "human_review_required": True,
     }
     write_json(selected_path.parent / "final_test_result.json", summary)

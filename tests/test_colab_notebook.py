@@ -71,7 +71,7 @@ def test_colab_mode_comments_explain_each_distinct_purpose() -> None:
     assert "공개 Zeroth 한국어 음성으로 전체 파이프라인만 검증" in mode_cell
     assert "제조 용어·난이도·소음 조건을 균형화한 합성 TTS 600개" in mode_cell
     assert "승인된 실제 제조 녹음과 사람 검수 전사" in mode_cell
-    assert "tiny·base·small 후보 목록" in mode_cell
+    assert "tiny부터 large-v3까지 정확도·자원 후보 목록" in mode_cell
     assert "엄격한 거버넌스 조건" in mode_cell
 
 
@@ -160,6 +160,8 @@ def test_colab_final_test_displays_correction_effect_and_audit_counts() -> None:
     assert 'final_test_metrics = final_test_result["metrics"]' in final_test_cell
     assert "build_test_metric_row" in final_test_cell
     assert '"domain_term_recall"' in final_test_cell
+    assert 'final_test_result["quality_gate"]' in final_test_cell
+    assert '"현업 정확도 목표:"' in final_test_cell
     assert 'Path(final_test_result["run_dir"]) / "correction_audit.csv"' in final_test_cell
     assert 'final_test_audit["outcome"].value_counts()' in final_test_cell
     assert '"improved_count"' in final_test_cell
@@ -185,10 +187,17 @@ def test_colab_final_test_summary_code_calculates_expected_values(tmp_path: Path
             "baseline": {"wer": 0.4, "cer": 0.2, "domain_term_recall": 0.3},
             "corrected": {"wer": 0.3, "cer": 0.15, "domain_term_recall": 0.5},
         },
+        "quality_gate": {
+            "overall_pass": False,
+            "observed": {"wer": 0.3, "cer": 0.15, "domain_term_recall": 0.5},
+            "checks": {
+                "wer": {"passed": False, "gap": 0.15},
+                "cer": {"passed": False, "gap": 0.08},
+                "domain_term_recall": {"passed": False, "gap": 0.35},
+            },
+        },
     }
-    (tmp_path / "final_test_result.json").write_text(
-        json.dumps(final_result), encoding="utf-8"
-    )
+    (tmp_path / "final_test_result.json").write_text(json.dumps(final_result), encoding="utf-8")
     pd.DataFrame(
         [
             {
@@ -238,4 +247,4 @@ def test_colab_final_test_summary_code_calculates_expected_values(tmp_path: Path
         "degraded_count": 0,
         "unchanged_count": 1,
     }
-    assert len(displayed) == 3
+    assert len(displayed) == 4

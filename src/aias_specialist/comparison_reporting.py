@@ -82,11 +82,20 @@ def build_comparison_report(
     completed = frame.loc[frame["status"] == "completed"].copy()
     if completed.empty:
         raise ValueError("A comparison report requires at least one completed member")
-    ranked = completed.sort_values(
-        ["cer", "wer", "aggregate_real_time_factor"],
-        ascending=[True, True, True],
-    ).reset_index(drop=True)
+    if "rank" in completed and completed["rank"].notna().any():
+        ranked = completed.sort_values("rank").reset_index(drop=True)
+    else:
+        ranked = completed.sort_values(
+            ["cer", "wer", "aggregate_real_time_factor"],
+            ascending=[True, True, True],
+        ).reset_index(drop=True)
     best = ranked.iloc[0]
+    targets_active = (
+        "quality_targets_enabled" in ranked
+        and ranked["quality_targets_enabled"]
+        .map(lambda value: str(value).strip().lower() == "true")
+        .any()
+    )
 
     document = Document()
     document.add_heading(title, level=0)
@@ -98,7 +107,9 @@ def build_comparison_report(
     kind_label = "모델" if group_kind == "benchmark" else "양자화 단계"
     document.add_paragraph(
         f"동일한 {evaluation_split} 데이터와 디코딩 조건에서 {len(completed)}개 {kind_label}를 "
-        f"비교했습니다. CER 기준 1위는 {best['member_id']}이며 CER={float(best['cer']):.3f}, "
+        f"비교했습니다. 목표 우선순위 기반 1위는 {best['member_id']}이며 "
+        f"용어 Recall={float(best['domain_term_recall']):.3f}, "
+        f"CER={float(best['cer']):.3f}, "
         f"WER={float(best['wer']):.3f}, aggregate RTF="
         f"{float(best['aggregate_real_time_factor']):.3f}입니다."
     )
@@ -133,13 +144,43 @@ def build_comparison_report(
         for cell, value in zip(cells, values, strict=True):
             cell.text = value
 
+    if targets_active:
+        document.add_heading("3. Manufacturing Quality Targets", level=1)
+        target_table = document.add_table(rows=1, cols=7)
+        target_table.style = "Table Grid"
+        target_headers = [
+            "Candidate",
+            "Overall",
+            "Recall gap",
+            "CER gap",
+            "WER gap",
+            "Recall pass",
+            "CER/WER pass",
+        ]
+        for cell, header in zip(target_table.rows[0].cells, target_headers, strict=True):
+            cell.text = header
+        for row in ranked.itertuples(index=False):
+            cells = target_table.add_row().cells
+            values = [
+                str(row.member_id),
+                "PASS" if bool(row.quality_target_pass) else "FAIL",
+                f"{float(row.domain_term_recall_gap):.1%}p",
+                f"{float(row.cer_gap):.1%}p",
+                f"{float(row.wer_gap):.1%}p",
+                "PASS" if bool(row.domain_term_recall_target_pass) else "FAIL",
+                ("PASS" if bool(row.cer_target_pass) and bool(row.wer_target_pass) else "FAIL"),
+            ]
+            for cell, value in zip(cells, values, strict=True):
+                cell.text = value
+
     if chart_path and chart_path.exists():
         paragraph = document.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         paragraph.add_run().add_picture(str(chart_path), width=Inches(6.3))
 
     if group_kind == "quantization" and reference_member:
-        document.add_heading("3. Quantization Trade-off", level=1)
+        tradeoff_number = 4 if targets_active else 3
+        document.add_heading(f"{tradeoff_number}. Quantization Trade-off", level=1)
         document.add_paragraph(
             f"정확도·속도·크기 변화는 {reference_member} 단계를 기준으로 계산했습니다. "
             "CER/WER 증가는 정확도 저하, RTF speedup은 1보다 클수록 속도 개선을 뜻합니다."
@@ -170,6 +211,8 @@ def build_comparison_report(
                 cell.text = value
 
     methodology_number = 4 if group_kind == "quantization" else 3
+    if targets_active:
+        methodology_number += 1
     document.add_heading(f"{methodology_number}. Methodology and Traceability", level=1)
     document.add_paragraph(
         "모든 후보는 독립적인 run_id로 실행되며 설정 snapshot, 환경, 입력 manifest, 원본 예측, "

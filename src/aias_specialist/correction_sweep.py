@@ -12,6 +12,7 @@ from .config import load_settings
 from .correction import apply_term_correction
 from .correction_audit import write_correction_audit
 from .evaluation import compare_metrics, evaluate_predictions, per_sample_metrics
+from .quality_targets import quality_target_columns
 from .utils import new_run_id, utc_now
 
 
@@ -63,9 +64,7 @@ def _candidate_options(candidate: dict[str, Any]) -> dict[str, Any]:
         "enabled": bool(candidate.get("enabled", True)),
         "case_sensitive": bool(candidate.get("case_sensitive", False)),
         "alias_enabled": bool(candidate.get("alias_enabled", True)),
-        "information_retrieval_enabled": bool(
-            information_retrieval.get("enabled", False)
-        ),
+        "information_retrieval_enabled": bool(information_retrieval.get("enabled", False)),
         "nearest_neighbor_enabled": bool(nearest_neighbor.get("enabled", False)),
         "top_k": int(candidate.get("top_k", 1)),
         "max_ngram_tokens": int(candidate.get("max_ngram_tokens", 2)),
@@ -258,6 +257,7 @@ def run_correction_sweep(
             "domain_term_recall_gain": float(improvement["domain_term_recall_gain"]),
             "config_path": str(candidate_dir / "correction.yaml"),
         }
+        row.update(quality_target_columns(corrected_metrics, settings.quality_targets))
         accepted, reason = _acceptance(row, gates, fallback=fallback)
         row["accepted"] = accepted
         row["acceptance_reason"] = reason
@@ -273,16 +273,39 @@ def run_correction_sweep(
         eligible = comparison.loc[comparison["fallback"]].copy()
     if eligible.empty:
         raise ValueError("No accepted correction candidate and no safe fallback candidate")
-    eligible = eligible.sort_values(
-        ["cer_after", "wer_after", "degraded_sample_rate", "changed_count", "candidate_id"]
-    )
+    if settings.quality_targets.enabled:
+        eligible = eligible.sort_values(
+            [
+                "quality_target_pass",
+                "domain_term_recall_gap",
+                "cer_gap",
+                "wer_gap",
+                "degraded_sample_rate",
+                "changed_count",
+                "candidate_id",
+            ],
+            ascending=[False, True, True, True, True, False, True],
+        )
+    else:
+        eligible = eligible.sort_values(
+            ["cer_after", "wer_after", "degraded_sample_rate", "changed_count", "candidate_id"]
+        )
     recommended_candidate = str(eligible.iloc[0]["candidate_id"])
     comparison["rank"] = pd.NA
     ranking = pd.concat(
         [
             eligible,
             comparison.loc[~comparison.index.isin(eligible.index)].sort_values(
-                ["accepted", "cer_after", "wer_after"], ascending=[False, True, True]
+                (
+                    ["accepted", "domain_term_recall_gap", "cer_gap", "wer_gap"]
+                    if settings.quality_targets.enabled
+                    else ["accepted", "cer_after", "wer_after"]
+                ),
+                ascending=(
+                    [False, True, True, True]
+                    if settings.quality_targets.enabled
+                    else [False, True, True]
+                ),
             ),
         ]
     )

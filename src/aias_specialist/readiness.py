@@ -220,6 +220,7 @@ def _check_acceptance_criteria(path: Path) -> tuple[bool, str]:
         "minimum_validation_samples",
         "minimum_test_samples",
         "maximum_cer",
+        "maximum_wer",
         "minimum_domain_term_recall",
         "maximum_aggregate_rtf",
         "maximum_p95_latency_seconds",

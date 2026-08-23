@@ -19,11 +19,24 @@ model:
   device: cuda
   compute_type: float16
   beam_size: 5
+  initial_prompt: 제조 현장 작업 기록입니다. 설비명, 모델 코드, 공정명, 수치와 단위를 정확히 전사합니다.
+  hotwords: AOI 검사기 CNC 선반 체결 토크 공구 보정값 절삭유 유량 주축 회전수 가공 원점 비전 검사기 설비 이상
 
 evaluation:
   split: test
   warmup_samples: 1
   timing_repetitions: 3
+
+# 실제 제조 데이터의 최종 Test 결과에 적용할 현업 정확도 합격 기준입니다.
+quality_targets:
+  enabled: true
+  minimum_domain_term_recall: 0.85
+  maximum_cer: 0.07
+  maximum_wer: 0.15
+  priority:
+    - domain_term_recall
+    - cer
+    - wer
 
 correction:
   enabled: true

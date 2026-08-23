@@ -22,6 +22,8 @@ def test_inference_warmup_and_repetitions_are_recorded(
     config = yaml.safe_load((ROOT / "configs/local_model_smoke.yaml").read_text(encoding="utf-8"))
     config["paths"]["model_lock"] = str(tmp_path / "model-lock.yaml")
     config["model"]["local_dir"] = str(model_dir)
+    config["model"]["initial_prompt"] = "제조 현장 작업 기록"
+    config["model"]["hotwords"] = "체결 토크 AOI 검사기"
     config["evaluation"] = {
         "split": "test",
         "warmup_samples": 1,
@@ -32,6 +34,7 @@ def test_inference_warmup_and_repetitions_are_recorded(
     settings = load_settings(config_path)
 
     calls: list[str] = []
+    transcribe_kwargs: list[dict[str, object]] = []
 
     class FakeModel:
         def __init__(self, *args, **kwargs) -> None:
@@ -39,6 +42,7 @@ def test_inference_warmup_and_repetitions_are_recorded(
 
         def transcribe(self, audio_path: str, **kwargs):
             calls.append(audio_path)
+            transcribe_kwargs.append(kwargs)
             return iter([SimpleNamespace(text=" 정상 예측 ")]), SimpleNamespace(duration=2.0)
 
     import faster_whisper
@@ -67,6 +71,9 @@ def test_inference_warmup_and_repetitions_are_recorded(
 
     assert revision == "a" * 40
     assert len(calls) == 4
+    assert all(call["language"] == "ko" for call in transcribe_kwargs)
+    assert all(call["initial_prompt"] == "제조 현장 작업 기록" for call in transcribe_kwargs)
+    assert all(call["hotwords"] == "체결 토크 AOI 검사기" for call in transcribe_kwargs)
     assert result.loc[0, "prediction_text"] == "정상 예측"
     assert result.loc[0, "warmup_samples"] == 1
     assert result.loc[0, "timing_repetitions"] == 3

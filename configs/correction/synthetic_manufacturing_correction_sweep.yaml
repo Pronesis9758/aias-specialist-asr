@@ -1,5 +1,5 @@
 correction_sweep:
-  id: synthetic-manufacturing-correction-sweep-v3
+  id: synthetic-manufacturing-correction-sweep-v4
   name: 합성 제조 음성 Validation 보정 안전성 탐색
   base_config: configs/synthetic_manufacturing_sample.yaml
   evaluation_split: validation
@@ -106,4 +106,23 @@ correction_sweep:
         enabled: true
         backend: char_ngram
         min_score: 0.85
+        weight: 0.5
+
+    # Recall 확대 후보입니다. Validation에서 단 한 문장도 악화시키지 않을 때만 선택됩니다.
+    - id: alias-hybrid-recall-safe
+      enabled: true
+      alias_enabled: true
+      top_k: 3
+      max_ngram_tokens: 2
+      require_consensus: false
+      min_score_margin: 0.08
+      max_length_ratio: 1.5
+      information_retrieval:
+        enabled: true
+        min_score: 0.75
+        weight: 0.5
+      nearest_neighbor:
+        enabled: true
+        backend: char_ngram
+        min_score: 0.82
         weight: 0.5

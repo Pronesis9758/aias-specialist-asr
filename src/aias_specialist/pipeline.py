@@ -14,6 +14,7 @@ from .correction_audit import write_correction_audit
 from .data import load_domain_terms, prepare_manifest
 from .environment import collect_environment
 from .evaluation import compare_metrics, evaluate_predictions, per_sample_metrics
+from .quality_targets import evaluate_quality_targets, quality_target_columns
 from .reporting import build_report, create_metrics_chart
 from .store import ExperimentStore, register_run_artifacts
 from .utils import git_sha, new_run_id, utc_now, write_json
@@ -38,6 +39,8 @@ def _write_summary(path: Path, settings: Settings, run_id: str, metrics: dict[st
     corrected_term_recall = (
         f"{corrected['domain_term_recall']:.4f}" if term_recall_applicable else "N/A"
     )
+    quality_gate = metrics["quality_gate"]
+    target_status = quality_gate["status"].upper()
     text = f"""# Run summary: {run_id}
 
 - Project: {settings.project.name}
@@ -50,6 +53,10 @@ def _write_summary(path: Path, settings: Settings, run_id: str, metrics: dict[st
 - WER absolute reduction: {improvement["wer_absolute_reduction"]:.4f}
 - Baseline domain term recall: {baseline_term_recall}
 - Corrected domain term recall: {corrected_term_recall}
+- Manufacturing quality target status: {target_status}
+- Target domain term recall: >= {settings.quality_targets.minimum_domain_term_recall:.2%}
+- Target CER: <= {settings.quality_targets.maximum_cer:.2%}
+- Target WER: <= {settings.quality_targets.maximum_wer:.2%}
 - Human review required: transcript labels, privacy approval, domain-term substitutions,
   final model choice
 """
@@ -163,8 +170,13 @@ def run_pipeline(settings: Settings) -> RunResult:
             "baseline": baseline_metrics,
             "corrected": corrected_metrics,
             "improvement": compare_metrics(baseline_metrics, corrected_metrics),
+            "quality_gate": evaluate_quality_targets(
+                corrected_metrics,
+                settings.quality_targets,
+            ),
         }
         write_json(run_dir / "metrics.json", metrics)
+        write_json(run_dir / "quality_gate.json", metrics["quality_gate"])
         write_json(
             run_dir / "resource_metrics.json",
             {
@@ -182,6 +194,11 @@ def run_pipeline(settings: Settings) -> RunResult:
         store.add_metrics(run_id, "baseline", baseline_metrics)
         store.add_metrics(run_id, "corrected", corrected_metrics)
         store.add_metrics(run_id, "improvement", metrics["improvement"])
+        store.add_metrics(
+            run_id,
+            "quality_gate",
+            quality_target_columns(corrected_metrics, settings.quality_targets),
+        )
 
         store.event(run_id, "report", "started")
         print("[pipeline] generating report", flush=True)

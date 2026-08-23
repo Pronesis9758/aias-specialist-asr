@@ -92,6 +92,15 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
     from faster_whisper import WhisperModel
 
     model = WhisperModel(str(model_path), device=device, compute_type=compute_type)
+    transcribe_options: dict[str, object] = {
+        "language": settings.model.language,
+        "beam_size": settings.model.beam_size,
+        "vad_filter": True,
+    }
+    if settings.model.initial_prompt:
+        transcribe_options["initial_prompt"] = settings.model.initial_prompt
+    if settings.model.hotwords:
+        transcribe_options["hotwords"] = settings.model.hotwords
     process = psutil.Process()
     peak_rss_mb = process.memory_info().rss / (1024 * 1024)
     peak_gpu_memory_mb = _gpu_memory_used_mb()
@@ -102,9 +111,7 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
         print(f"[inference] warmup {warmup_index}/{warmup_count}", flush=True)
         segments, _ = model.transcribe(
             str(Path(str(record["audio_path"]))),
-            language=settings.model.language,
-            beam_size=settings.model.beam_size,
-            vad_filter=True,
+            **transcribe_options,
         )
         list(segments)
 
@@ -124,9 +131,7 @@ def run_inference(frame: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame
             started = time.perf_counter()
             segments, info = model.transcribe(
                 str(audio_path),
-                language=settings.model.language,
-                beam_size=settings.model.beam_size,
-                vad_filter=True,
+                **transcribe_options,
             )
             predictions.append(" ".join(segment.text.strip() for segment in segments).strip())
             latencies.append(time.perf_counter() - started)

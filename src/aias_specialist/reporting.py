@@ -98,8 +98,7 @@ def _create_adaptation_metrics_chart(
     accuracy_axis.set_xticks(positions, labels)
     accuracy_axis.set_ylim(
         0,
-        max(1.0, baseline["wer"], baseline["cer"], adapted["wer"], adapted["cer"])
-        * 1.16,
+        max(1.0, baseline["wer"], baseline["cer"], adapted["wer"], adapted["cer"]) * 1.16,
     )
     accuracy_axis.set_ylabel("Error rate (lower is better)")
     accuracy_axis.set_title("Accuracy on identical test samples")
@@ -647,7 +646,51 @@ def build_report(
             )
             document_properties[0].set("title", "ASR evaluation metric comparison")
 
-    document.add_heading("3. Interpretation and Limits", level=1)
+    quality_gate = metrics.get("quality_gate")
+    next_section = 3
+    if isinstance(quality_gate, dict) and quality_gate.get("enabled"):
+        document.add_heading("3. Manufacturing Quality Gate", level=1)
+        target_table = document.add_table(rows=1, cols=5)
+        target_table.style = "Table Grid"
+        target_headers = ["Priority", "Metric", "Target", "Observed", "Status"]
+        for cell, label in zip(target_table.rows[0].cells, target_headers, strict=True):
+            cell.text = label
+        target_rows = [
+            (
+                "1",
+                "Domain Term Recall",
+                f">= {float(quality_gate['targets']['minimum_domain_term_recall']):.1%}",
+                f"{float(quality_gate['observed']['domain_term_recall']):.1%}",
+                quality_gate["checks"]["domain_term_recall"]["passed"],
+            ),
+            (
+                "2",
+                "CER",
+                f"<= {float(quality_gate['targets']['maximum_cer']):.1%}",
+                f"{float(quality_gate['observed']['cer']):.1%}",
+                quality_gate["checks"]["cer"]["passed"],
+            ),
+            (
+                "3",
+                "WER",
+                f"<= {float(quality_gate['targets']['maximum_wer']):.1%}",
+                f"{float(quality_gate['observed']['wer']):.1%}",
+                quality_gate["checks"]["wer"]["passed"],
+            ),
+        ]
+        for values in target_rows:
+            row = target_table.add_row().cells
+            for cell, value in zip(row[:4], values[:-1], strict=True):
+                cell.text = str(value)
+            row[4].text = "PASS" if values[-1] else "FAIL"
+        overall_label = "PASS" if quality_gate["overall_pass"] else "FAIL"
+        document.add_paragraph(
+            f"Overall target status: {overall_label}. "
+            "세 지표를 모두 만족해야 현업 정확도 목표 통과 후보로 분류합니다."
+        )
+        next_section = 4
+
+    document.add_heading(f"{next_section}. Interpretation and Limits", level=1)
     if backend == "fixture":
         document.add_paragraph(
             "Fixture 실행은 자동화 구조와 계산 로직을 검증하기 위한 합성 결과입니다. "
@@ -666,7 +709,7 @@ def build_report(
         "평가해야 합니다."
     )
 
-    document.add_heading("4. Next Review Gate", level=1)
+    document.add_heading(f"{next_section + 1}. Next Review Gate", level=1)
     document.add_paragraph(
         "다음 단계는 실제 데이터의 사용 승인과 transcript 표본 검수를 완료한 뒤 동일 "
         "파이프라인으로 "
