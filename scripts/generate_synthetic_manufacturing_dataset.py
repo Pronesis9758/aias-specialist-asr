@@ -22,7 +22,7 @@ DEFAULT_OUTPUT = ROOT / "data" / "sample" / "manufacturing_synthetic"
 VOICE_NAME = "Microsoft Heami Desktop"
 SAMPLE_RATE = 16_000
 APPROVAL_ID = "SYNTHETIC-FIXTURE-NO-HUMAN-DATA"
-DATASET_ID = "synthetic-manufacturing-korean-asr-v2"
+DATASET_ID = "synthetic-manufacturing-korean-asr-v3"
 GENERATED_ON = "2026-08-23"
 
 SPLIT_RATES = {
@@ -164,27 +164,44 @@ SCENARIOS = (
 
 DIFFICULTIES = ("normal", "term_dense", "error_prone")
 DIFFICULTY_SPLIT_COUNTS = {"train": 12, "validation": 4, "test": 4}
-MODEL_CODES = (
-    "엑스 백일",
-    "엑스 백이",
-    "케이 이백일",
-    "케이 이백이",
-    "에이 삼백일",
-    "에이 삼백이",
-    "엠 사백일",
-    "엠 사백이",
-    "큐 오백일",
-    "큐 오백이",
-    "티 육백일",
-    "티 육백이",
-    "브이 칠백일",
-    "브이 칠백이",
-    "알 팔백일",
-    "알 팔백이",
-    "에스 구백일",
-    "에스 구백이",
-    "지 천일",
-    "지 천이",
+MODEL_CODE_PAIRS = (
+    ("엑스 백일", "X101"),
+    ("엑스 백이", "X102"),
+    ("케이 이백일", "K201"),
+    ("케이 이백이", "K202"),
+    ("에이 삼백일", "A301"),
+    ("에이 삼백이", "A302"),
+    ("엠 사백일", "M401"),
+    ("엠 사백이", "M402"),
+    ("큐 오백일", "Q501"),
+    ("큐 오백이", "Q502"),
+    ("티 육백일", "T601"),
+    ("티 육백이", "T602"),
+    ("브이 칠백일", "V701"),
+    ("브이 칠백이", "V702"),
+    ("알 팔백일", "R801"),
+    ("알 팔백이", "R802"),
+    ("에스 구백일", "S901"),
+    ("에스 구백이", "S902"),
+    ("지 천일", "G1001"),
+    ("지 천이", "G1002"),
+)
+MODEL_CODES = tuple(spoken for spoken, _ in MODEL_CODE_PAIRS)
+EQUIPMENT_NUMBER_PAIRS = (
+    ("일 호기", "1호기"),
+    ("이 호기", "2호기"),
+    ("삼 호기", "3호기"),
+    ("사 호기", "4호기"),
+    ("오 호기", "5호기"),
+)
+STANDARD_TRANSCRIPT_PAIRS = (
+    ("에이오아이 검사기", "AOI 검사기"),
+    ("에이치엠아이", "HMI"),
+    ("씨엔씨 선반", "CNC 선반"),
+    ("에이지브이", "AGV"),
+    ("피엘씨", "PLC"),
+    *EQUIPMENT_NUMBER_PAIRS,
+    *MODEL_CODE_PAIRS,
 )
 ACTION_STEMS = ("점검", "확인", "기록", "검증")
 
@@ -216,6 +233,14 @@ def _sentence(scenario: Scenario, subject: str, component: str, difficulty: str)
     )
 
 
+def _to_reference_text(spoken_text: str) -> str:
+    """Convert a Korean pronunciation script into the required factory transcript style."""
+    reference_text = spoken_text
+    for spoken, standard in STANDARD_TRANSCRIPT_PAIRS:
+        reference_text = reference_text.replace(spoken, standard)
+    return reference_text
+
+
 def build_utterances(seed: int = 20_260_823) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     split_order = ("train", "validation", "test")
@@ -231,19 +256,29 @@ def build_utterances(seed: int = 20_260_823) -> list[dict[str, str]]:
             for split in split_order:
                 count = DIFFICULTY_SPLIT_COUNTS[split]
                 for subject, component in combinations[start : start + count]:
+                    spoken_text = _sentence(scenario, subject, component, difficulty)
+                    target_terms = [_to_reference_text(scenario.canonical_term)]
+                    if difficulty != "normal":
+                        target_terms.append(_to_reference_text(scenario.related_term))
+                    if difficulty == "error_prone":
+                        target_terms.extend(
+                            standard
+                            for spoken, standard in MODEL_CODE_PAIRS
+                            if spoken in spoken_text
+                        )
+                    target_terms.extend(
+                        standard
+                        for spoken, standard in EQUIPMENT_NUMBER_PAIRS
+                        if spoken in spoken_text
+                    )
                     rows.append(
                         {
                             "split": split,
                             "scenario_id": scenario.scenario_id,
                             "difficulty_group": difficulty,
-                            "term_targets": (
-                                scenario.canonical_term
-                                if difficulty == "normal"
-                                else f"{scenario.canonical_term}|{scenario.related_term}"
-                            ),
-                            "reference_text": _sentence(
-                                scenario, subject, component, difficulty
-                            ),
+                            "term_targets": "|".join(target_terms),
+                            "spoken_text": spoken_text,
+                            "reference_text": _to_reference_text(spoken_text),
                         }
                     )
                 start += count
@@ -253,7 +288,7 @@ def build_utterances(seed: int = 20_260_823) -> list[dict[str, str]]:
             split_rank[row["split"]],
             row["scenario_id"],
             row["difficulty_group"],
-            row["reference_text"],
+            row["spoken_text"],
         )
     )
     expected_counts = {"train": 360, "validation": 120, "test": 120}
@@ -261,6 +296,8 @@ def build_utterances(seed: int = 20_260_823) -> list[dict[str, str]]:
         raise AssertionError("Synthetic split construction did not produce 360/120/120")
     if len({row["reference_text"] for row in rows}) != len(rows):
         raise AssertionError("Synthetic reference texts must be unique across all splits")
+    if len({row["spoken_text"] for row in rows}) != len(rows):
+        raise AssertionError("Synthetic spoken texts must be unique across all splits")
     return rows
 
 
@@ -374,7 +411,12 @@ def _wav_metadata(path: Path) -> tuple[float, str]:
     return duration, digest
 
 
-def generate_dataset(output_dir: Path, voice: str, overwrite: bool) -> Path:
+def generate_dataset(
+    output_dir: Path,
+    voice: str,
+    overwrite: bool,
+    reuse_existing_audio: bool = False,
+) -> Path:
     if platform.system() != "Windows":
         raise RuntimeError("This generator uses the Windows System.Speech TTS runtime")
     manifest_path = output_dir / "manifest.csv"
@@ -398,7 +440,7 @@ def generate_dataset(output_dir: Path, voice: str, overwrite: bool) -> Path:
         noise_name, snr_db, hum_hz = NOISE_PROFILES[split_index % len(NOISE_PROFILES)]
         synthesis_items.append(
             {
-                "text": utterance["reference_text"],
+                "text": utterance["spoken_text"],
                 "output_path": str(audio_path),
                 "rate": rate,
             }
@@ -416,8 +458,19 @@ def generate_dataset(output_dir: Path, voice: str, overwrite: bool) -> Path:
             }
         )
 
-    print(f"Synthesizing {len(synthesis_items)} unique Korean manufacturing utterances...")
-    _synthesize_batch(synthesis_items, voice)
+    if reuse_existing_audio:
+        missing_audio = [
+            str(item["output_path"])
+            for item in synthesis_items
+            if not Path(str(item["output_path"])).exists()
+        ]
+        if missing_audio:
+            preview = "\n".join(missing_audio[:10])
+            raise FileNotFoundError(f"Existing synthetic WAV files are missing:\n{preview}")
+        print(f"Reusing {len(synthesis_items)} existing WAV files; refreshing labels only...")
+    else:
+        print(f"Synthesizing {len(synthesis_items)} unique Korean manufacturing utterances...")
+        _synthesize_batch(synthesis_items, voice)
 
     rows: list[dict[str, str]] = []
     for planned in planned_rows:
@@ -426,13 +479,15 @@ def generate_dataset(output_dir: Path, voice: str, overwrite: bool) -> Path:
         snr_value = planned["snr_db"]
         snr_db = None if snr_value is None else float(snr_value)
         hum_hz = float(planned["hum_hz"])
-        _add_noise(audio_path, snr_db, hum_hz, seed=20_260_810 + global_index)
+        if not reuse_existing_audio:
+            _add_noise(audio_path, snr_db, hum_hz, seed=20_260_810 + global_index)
         duration, digest = _wav_metadata(audio_path)
         rows.append(
             {
                 "sample_id": str(planned["sample_id"]),
                 "audio_path": f"audio/{audio_path.name}",
                 "reference_text": str(planned["reference_text"]),
+                "spoken_text": str(planned["spoken_text"]),
                 "split": str(planned["split"]),
                 "source": "synthetic_windows_system_speech",
                 "consent_status": "synthetic",
@@ -469,6 +524,7 @@ def generate_dataset(output_dir: Path, voice: str, overwrite: bool) -> Path:
         "sample_rate_hz": SAMPLE_RATE,
         "sample_count": len(rows),
         "unique_reference_count": len({row["reference_text"] for row in rows}),
+        "unique_spoken_text_count": len({row["spoken_text"] for row in rows}),
         "split_counts": dict(Counter(row["split"] for row in rows)),
         "difficulty_counts": dict(Counter(row["difficulty_group"] for row in rows)),
         "noise_condition_counts": dict(Counter(row["noise_condition"] for row in rows)),
@@ -478,6 +534,24 @@ def generate_dataset(output_dir: Path, voice: str, overwrite: bool) -> Path:
             "not real speakers"
         ),
         "noise_profiles": [profile[0] for profile in NOISE_PROFILES],
+        "audio_generation_mode": (
+            "reused_existing_wav" if reuse_existing_audio else "generated_from_spoken_text"
+        ),
+        "transcription_policy": {
+            "spoken_text": "Korean pronunciation script passed to TTS",
+            "reference_text": (
+                "Required final transcript with official Latin acronyms and model codes"
+            ),
+            "standardized_terms": [
+                "PLC",
+                "HMI",
+                "CNC",
+                "AGV",
+                "AOI",
+                "alphanumeric model codes",
+                "Arabic-number equipment identifiers",
+            ],
+        },
         "intended_use": (
             "ASR pipeline, domain-term correction tuning on validation, held-out test "
             "evaluation, reporting, and artifact-contract functional testing"
@@ -517,8 +591,18 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--voice", default=VOICE_NAME)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--reuse-existing-audio",
+        action="store_true",
+        help="Keep existing WAV files and rebuild only manifest labels and provenance",
+    )
     args = parser.parse_args()
-    manifest = generate_dataset(args.output_dir.resolve(), args.voice, args.overwrite)
+    manifest = generate_dataset(
+        args.output_dir.resolve(),
+        args.voice,
+        args.overwrite,
+        reuse_existing_audio=args.reuse_existing_audio,
+    )
     print(manifest)
 
 

@@ -28,6 +28,24 @@ def test_domain_term_correction_improves_metrics() -> None:
     assert corrected["domain_term_recall"] > baseline["domain_term_recall"]
 
 
+def test_alias_correction_emits_standard_acronyms_and_model_codes() -> None:
+    predictions = pd.DataFrame(
+        {
+            "prediction_text": [
+                "일 호기 피엘씨와 에이치엠아이에서 에이지브이 모델 큐 오백이를 확인합니다."
+            ]
+        }
+    )
+    terms = load_domain_terms(ROOT / "data/domain_terms/manufacturing_terms.csv")
+
+    corrected = apply_term_correction(predictions, terms)
+
+    assert corrected.loc[0, "prediction_text"] == (
+        "1호기 PLC와 HMI에서 AGV 모델 Q502를 확인합니다."
+    )
+    assert corrected.loc[0, "correction_methods"] == "alias"
+
+
 def test_domain_term_recall_is_not_applicable_without_terms() -> None:
     predictions = pd.DataFrame(
         {

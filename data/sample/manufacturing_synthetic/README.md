@@ -11,11 +11,31 @@
 - 조용한 음성, 팬 잡음, 설비 저주파 잡음, 8 dB 고난도 공장 잡음 조건
 - split마다 겹치지 않는 TTS 속도 변형을 synthetic speaker ID로 기록
 - 각 WAV의 SHA-256과 생성 출처를 `manifest.csv`에 기록
+- `spoken_text`에는 TTS가 실제로 읽은 한글 발음을, `reference_text`에는 제조 문서에서
+  요구하는 영문 약어·모델 코드 표준 표기를 기록
+
+표기 예시:
+
+| spoken_text(음성 발음) | reference_text(평가 정답) |
+| --- | --- |
+| 피엘씨 입력 신호를 확인합니다. | PLC 입력 신호를 확인합니다. |
+| 에이지브이 모델 큐 오백이 | AGV 모델 Q502 |
+| 일 호기 씨엔씨 선반 | 1호기 CNC 선반 |
+
+`PLC`, `HMI`, `CNC`, `AGV`, `AOI`와 영숫자 모델 코드는 영문 표기를 정답으로 사용하고,
+설비 번호는 `1호기`, `2호기`처럼 아라비아 숫자로 기록하며,
+센서·컨베이어·베어링처럼 현장에서 통상 한글로 기록하는 일반 용어는 한글을 유지합니다.
 
 재생성 명령:
 
 ```powershell
 uv run python scripts/generate_synthetic_manufacturing_dataset.py --overwrite
+```
+
+기존 WAV를 다시 합성하지 않고 정답 표기와 출처 정보만 갱신하는 명령:
+
+```powershell
+uv run python scripts/generate_synthetic_manufacturing_dataset.py --overwrite --reuse-existing-audio
 ```
 
 생성에는 Windows에 설치된 `Microsoft Heami Desktop` 음성이 필요합니다. 생성된 WAV는 Colab에서
