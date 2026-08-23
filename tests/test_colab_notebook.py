@@ -139,5 +139,9 @@ def test_colab_runtime_specs_share_the_selected_experiment_ids() -> None:
     assert 'runtime_config["assessment"]["quantization_id"] = QUANTIZATION_ID' in runtime_cell
     assert 'runtime_matrix["benchmark"]["id"] = BENCHMARK_ID' in runtime_cell
     assert 'runtime_quantization["quantization"]["id"] = QUANTIZATION_ID' in runtime_cell
+    assert (
+        'Path(PROJECT_DIR) / "configs/correction/aias_runtime_correction_sweep.yaml"'
+        in runtime_cell
+    )
     assert "correction_sweep_id = experiment_id(" in runtime_cell
     assert "CORRECTION_SWEEP_SPEC = str(runtime_correction_sweep_path)" in runtime_cell
