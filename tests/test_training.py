@@ -5,6 +5,7 @@ import pytest
 
 from aias_specialist.distillation import distillation_loss
 from aias_specialist.training import (
+    _baseline_cache_identity,
     _extract_input_features,
     _gradient_checkpointing_enabled,
     _lora_config_kwargs,
@@ -119,6 +120,24 @@ def test_prediction_frame_uses_aggregate_batch_timing() -> None:
     assert result["latency_seconds"].tolist() == [0.5, 0.5]
     assert result["real_time_factor"].tolist() == [0.2, 0.2]
     assert result["sample_wer"].tolist() == [0.0, 0.0]
+
+
+def test_baseline_cache_identity_changes_with_model_or_references() -> None:
+    frame = pd.DataFrame(
+        {"sample_id": ["a", "b"], "reference_text": ["체결 완료", "압력 정상"]}
+    )
+
+    identity = _baseline_cache_identity("openai/whisper-medium", "abc123", "validation", frame)
+    changed_reference = frame.copy()
+    changed_reference.loc[1, "reference_text"] = "압력 이상"
+
+    assert identity["sample_count"] == 2
+    assert identity["ordered_reference_sha256"] != _baseline_cache_identity(
+        "openai/whisper-medium", "abc123", "validation", changed_reference
+    )["ordered_reference_sha256"]
+    assert identity != _baseline_cache_identity(
+        "openai/whisper-large-v3", "abc123", "validation", frame
+    )
 
 
 def test_distillation_loss_supports_independent_hard_and_soft_weights() -> None:

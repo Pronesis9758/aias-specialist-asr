@@ -78,9 +78,9 @@ training:
   low_cpu_mem_usage: true
   load_dtype: float16
   # A100 80 GB에서 유효 배치 8은 유지하면서 micro-batch를 키워 GPU 활용률을 높입니다.
-  train_batch_size: 4
-  eval_batch_size: 4
-  gradient_accumulation_steps: 2
+  train_batch_size: 8
+  eval_batch_size: 16
+  gradient_accumulation_steps: 1
   # 대용량 log-Mel 배열의 multiprocessing 교착을 피하고 split별 단일 worker로 처리합니다.
   preprocess_num_proc: 1
   gradient_checkpointing: false

@@ -95,6 +95,9 @@ def _write_run_config(
                 int(stage.get("save_steps", int(stage["max_steps"]) // 3)),
             ),
             "resume_from_checkpoint": False,
+            "baseline_predictions_cache": str(
+                group_dir / "baseline-cache" / f"{model['id']}__validation.csv"
+            ),
             "output_dir": str(
                 settings.paths.artifacts_dir.parent
                 / "checkpoints/lora-learning-curve"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
 import time
 import traceback
@@ -184,6 +185,31 @@ def _prediction_frame(
         runtime_seconds / total_audio_seconds if total_audio_seconds > 0 else 0.0
     )
     return per_sample_metrics(output)
+
+
+def _baseline_cache_identity(
+    repo_id: str,
+    revision: str,
+    split: str,
+    comparison_frame: pd.DataFrame,
+) -> dict[str, Any]:
+    """Describe the immutable model and ordered references behind a baseline cache."""
+    rows = "\n".join(
+        f"{sample_id}\t{reference_text}"
+        for sample_id, reference_text in zip(
+            comparison_frame["sample_id"].astype(str),
+            comparison_frame["reference_text"].astype(str),
+            strict=True,
+        )
+    )
+    return {
+        "schema_version": 1,
+        "repo_id": repo_id,
+        "resolved_revision": revision,
+        "evaluation_split": split,
+        "sample_count": len(comparison_frame),
+        "ordered_reference_sha256": hashlib.sha256(rows.encode("utf-8")).hexdigest(),
+    }
 
 
 def _evaluation_metrics(frame: pd.DataFrame, terms: pd.DataFrame) -> dict[str, Any]:
@@ -508,18 +534,55 @@ def train_whisper_lora(settings: Settings) -> Path:
             "started",
             f"split={comparison_split}; samples={len(comparison_dataset)}",
         )
-        baseline_started = time.perf_counter()
-        with trainer.model.disable_adapter():
-            baseline_output = trainer.predict(
-                comparison_dataset, metric_key_prefix=f"base_{comparison_split}"
-            )
-        baseline_runtime = time.perf_counter() - baseline_started
-        baseline_predictions = _prediction_frame(
-            comparison_frame,
-            _decode_prediction_text(baseline_output, processor),
-            baseline_runtime,
-            "base_whisper",
+        baseline_cache_value = values.get("baseline_predictions_cache")
+        baseline_cache = (
+            _path(settings.project_root, str(baseline_cache_value))
+            if baseline_cache_value
+            else None
         )
+        cache_identity = _baseline_cache_identity(
+            repo_id,
+            revision,
+            comparison_split,
+            comparison_frame,
+        )
+        cache_metadata = (
+            baseline_cache.with_suffix(baseline_cache.suffix + ".metadata.json")
+            if baseline_cache is not None
+            else None
+        )
+        if baseline_cache is not None and baseline_cache.exists():
+            if cache_metadata is None or not cache_metadata.exists():
+                raise ValueError(f"Baseline cache metadata is missing: {baseline_cache}")
+            actual_identity = yaml.safe_load(cache_metadata.read_text(encoding="utf-8"))
+            if actual_identity != cache_identity:
+                raise ValueError(f"Baseline cache identity mismatch: {baseline_cache}")
+            baseline_predictions = pd.read_csv(baseline_cache)
+            expected_ids = comparison_frame["sample_id"].astype(str).tolist()
+            cached_ids = baseline_predictions["sample_id"].astype(str).tolist()
+            if cached_ids != expected_ids:
+                raise ValueError(f"Baseline cache sample order mismatch: {baseline_cache}")
+            print(f"[training] reused baseline predictions: {baseline_cache}", flush=True)
+        else:
+            baseline_started = time.perf_counter()
+            with trainer.model.disable_adapter():
+                baseline_output = trainer.predict(
+                    comparison_dataset, metric_key_prefix=f"base_{comparison_split}"
+                )
+            baseline_runtime = time.perf_counter() - baseline_started
+            baseline_predictions = _prediction_frame(
+                comparison_frame,
+                _decode_prediction_text(baseline_output, processor),
+                baseline_runtime,
+                "base_whisper",
+            )
+            if baseline_cache is not None:
+                baseline_cache.parent.mkdir(parents=True, exist_ok=True)
+                baseline_predictions.to_csv(
+                    baseline_cache, index=False, encoding="utf-8-sig"
+                )
+                if cache_metadata is not None:
+                    write_json(cache_metadata, cache_identity)
         baseline_predictions.to_csv(
             run_dir / "predictions_baseline.csv", index=False, encoding="utf-8-sig"
         )
