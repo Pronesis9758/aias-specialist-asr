@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 import nbformat
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks" / "colab_manufacturing_assessment.ipynb"
@@ -145,3 +147,95 @@ def test_colab_runtime_specs_share_the_selected_experiment_ids() -> None:
     )
     assert "correction_sweep_id = experiment_id(" in runtime_cell
     assert "CORRECTION_SWEEP_SPEC = str(runtime_correction_sweep_path)" in runtime_cell
+
+
+def test_colab_final_test_displays_correction_effect_and_audit_counts() -> None:
+    notebook = nbformat.read(NOTEBOOK, as_version=4)
+    final_test_cell = next(
+        cell.source
+        for cell in notebook.cells
+        if cell.cell_type == "code" and "final_test_result_path" in cell.source
+    )
+
+    assert 'final_test_metrics = final_test_result["metrics"]' in final_test_cell
+    assert "build_test_metric_row" in final_test_cell
+    assert '"domain_term_recall"' in final_test_cell
+    assert 'Path(final_test_result["run_dir"]) / "correction_audit.csv"' in final_test_cell
+    assert 'final_test_audit["outcome"].value_counts()' in final_test_cell
+    assert '"improved_count"' in final_test_cell
+    assert '"degraded_count"' in final_test_cell
+    assert "final_test_changed_mask" in final_test_cell
+    assert "final_test_review_columns" in final_test_cell
+
+
+def test_colab_final_test_summary_code_calculates_expected_values(tmp_path: Path) -> None:
+    notebook = nbformat.read(NOTEBOOK, as_version=4)
+    final_test_cell = next(
+        cell.source
+        for cell in notebook.cells
+        if cell.cell_type == "code" and "final_test_result_path" in cell.source
+    )
+    selection_path = tmp_path / "quantization_selection.yaml"
+    selection_path.write_text("selection: {}\n", encoding="utf-8")
+    run_dir = tmp_path / "test-run"
+    run_dir.mkdir()
+    final_result = {
+        "run_dir": str(run_dir),
+        "metrics": {
+            "baseline": {"wer": 0.4, "cer": 0.2, "domain_term_recall": 0.3},
+            "corrected": {"wer": 0.3, "cer": 0.15, "domain_term_recall": 0.5},
+        },
+    }
+    (tmp_path / "final_test_result.json").write_text(
+        json.dumps(final_result), encoding="utf-8"
+    )
+    pd.DataFrame(
+        [
+            {
+                "sample_id": "sample-1",
+                "outcome": "improved",
+                "reference_text": "프레스 3호기",
+                "recognized_before": "프레스 삼오기",
+                "corrected_after": "프레스 3호기",
+                "correction_methods": "alias",
+                "cer_absolute_reduction": 0.2,
+                "text_changed": True,
+            },
+            {
+                "sample_id": "sample-2",
+                "outcome": "unchanged",
+                "reference_text": "베어링 점검",
+                "recognized_before": "베어링 점검",
+                "corrected_after": "베어링 점검",
+                "correction_methods": "",
+                "cer_absolute_reduction": 0.0,
+                "text_changed": False,
+            },
+        ]
+    ).to_csv(run_dir / "correction_audit.csv", index=False)
+    displayed: list[pd.DataFrame] = []
+    namespace = {
+        "CONFIG": "unused-test-config.yaml",
+        "Path": Path,
+        "RUN_QUANTIZATION": True,
+        "display": displayed.append,
+        "json": json,
+        "model_selection": selection_path,
+        "pd": pd,
+        "quantization_selection": selection_path,
+        "run_aias": lambda *args: None,
+    }
+
+    exec(compile(final_test_cell, str(NOTEBOOK), "exec"), namespace)
+
+    metric_table = namespace["final_test_metric_table"]
+    change_table = namespace["final_test_change_table"]
+    assert metric_table["absolute_improvement"].round(3).tolist() == [0.1, 0.05, 0.2]
+    assert change_table.iloc[0].to_dict() == {
+        "sample_count": 2,
+        "changed_count": 1,
+        "improved_count": 1,
+        "degraded_count": 0,
+        "unchanged_count": 1,
+    }
+    assert len(displayed) == 3
