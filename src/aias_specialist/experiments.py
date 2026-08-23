@@ -924,11 +924,34 @@ def train_selected_whisper_lora(
     raw = _absolute_base_config(settings.raw, settings)
     training = raw.setdefault("training", {})
     training["enabled"] = True
-    training["repo_id"] = str(selection["model"]["repo_id"])
-    model_id = str(selection.get("model_id") or selection.get("member_id"))
+    selected_model_id = str(selection.get("model_id") or selection.get("member_id"))
+    selected_repo_id = str(selection["model"]["repo_id"])
+    follow_selected_model = bool(training.get("follow_selected_model", True))
+    configured_repo_id = training.get("repo_id")
+    if not follow_selected_model and not configured_repo_id:
+        raise ValueError(
+            "training.repo_id is required when training.follow_selected_model is false"
+        )
+    training_repo_id = (
+        selected_repo_id if follow_selected_model else str(configured_repo_id)
+    )
+    training_model_id = (
+        selected_model_id
+        if follow_selected_model
+        else str(training.get("model_id") or training_repo_id.rsplit("/", 1)[-1])
+    )
+    training["repo_id"] = training_repo_id
+    training["source_selection_model_id"] = selected_model_id
+    training["source_selection_repo_id"] = selected_repo_id
+    training["model_policy"] = (
+        "selected_model" if follow_selected_model else "configured_resource_candidate"
+    )
     output_root = str(training.get("output_dir", "checkpoints/manufacturing-whisper-lora"))
-    training["output_dir"] = f"{output_root.rstrip('/')}/{model_id}"
-    raw.setdefault("report", {})["title"] = f"선택 Whisper LoRA 평가 - {model_id}"
+    training["output_dir"] = f"{output_root.rstrip('/')}/{training_model_id}"
+    raw.setdefault("report", {})["title"] = (
+        f"Whisper LoRA 평가 - {training_model_id} "
+        f"(추론 선택 모델: {selected_model_id})"
+    )
     config_path = selected_path.parent / "selected_training_config.yaml"
     config_path.write_text(
         yaml.safe_dump(raw, allow_unicode=True, sort_keys=False),
@@ -938,8 +961,11 @@ def train_selected_whisper_lora(
     result = {
         "selection_path": str(selected_path),
         "config_path": str(config_path),
-        "model_id": model_id,
-        "model_repo": str(selection["model"]["repo_id"]),
+        "model_id": training_model_id,
+        "model_repo": training_repo_id,
+        "selected_inference_model_id": selected_model_id,
+        "selected_inference_model_repo": selected_repo_id,
+        "model_policy": training["model_policy"],
         "run_dir": str(run_dir),
         "report_path": str(run_dir / "reports/evaluation_report.docx"),
         "human_review_required": True,

@@ -231,6 +231,56 @@ def test_selected_model_drives_lora_training_config(
     assert result["run_dir"] == str(fake_run_dir)
 
 
+def test_configured_resource_candidate_can_drive_lora_training(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base_config = _base_config(tmp_path)
+    base_values = yaml.safe_load(base_config.read_text(encoding="utf-8"))
+    base_values["training"] = {
+        "enabled": True,
+        "follow_selected_model": False,
+        "model_id": "small-resource-candidate",
+        "repo_id": "fixture/whisper-small",
+        "output_dir": str(tmp_path / "checkpoints"),
+    }
+    base_config.write_text(
+        yaml.safe_dump(base_values, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    matrix = _experiment_spec(
+        ROOT / "configs/benchmarks/local_fixture.yaml",
+        tmp_path / "matrix-resource-training.yaml",
+        "benchmark",
+        "fixture-resource-training-test",
+        base_config,
+    )
+    benchmark = run_model_benchmark(matrix)
+    selection_path = select_experiment_member(
+        benchmark.group_dir,
+        "tiny",
+        reviewer="test-reviewer",
+        reason="Resource-aware training candidate test",
+    )
+    fake_run_dir = tmp_path / "artifacts/runs/train-resource-candidate"
+    fake_run_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        "aias_specialist.experiments.train_whisper_lora",
+        lambda settings: fake_run_dir,
+    )
+
+    result = train_selected_whisper_lora(selection_path, base_config)
+
+    generated = yaml.safe_load(
+        (benchmark.group_dir / "selected_training_config.yaml").read_text(encoding="utf-8")
+    )
+    assert generated["training"]["repo_id"] == "fixture/whisper-small"
+    assert generated["training"]["source_selection_repo_id"] == "fixture/whisper-tiny"
+    assert generated["training"]["model_policy"] == "configured_resource_candidate"
+    assert result["model_id"] == "small-resource-candidate"
+    assert result["selected_inference_model_id"] == "tiny"
+
+
 def test_public_proxy_selection_is_not_marked_as_human_reviewed(tmp_path: Path) -> None:
     base_config = _base_config(tmp_path)
     matrix = _experiment_spec(

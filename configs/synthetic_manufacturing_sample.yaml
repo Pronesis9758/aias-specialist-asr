@@ -67,6 +67,9 @@ correction:
 
 training:
   enabled: true
+  # 정확도 1위 대형 추론 모델과 Colab에서 실제 학습할 소형 LoRA 후보를 분리한다.
+  follow_selected_model: false
+  model_id: small-colab-lora
   repo_id: openai/whisper-small
   revision: main
   method: lora

@@ -56,6 +56,9 @@ correction:
 
 training:
   enabled: true
+  # 표준 Colab에서는 false로 두고, high-RAM GPU에서 선택 모델 자체를 학습할 때만 true로 바꾼다.
+  follow_selected_model: false
+  model_id: small-colab-lora
   repo_id: openai/whisper-small
   revision: main
   method: lora

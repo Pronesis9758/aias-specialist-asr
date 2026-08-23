@@ -58,6 +58,8 @@ correction:
 
 training:
   enabled: true
+  follow_selected_model: false
+  model_id: small-colab-lora
   repo_id: openai/whisper-small
   revision: main
   method: lora
