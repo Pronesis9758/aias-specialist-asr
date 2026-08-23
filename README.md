@@ -39,7 +39,7 @@ Fine-tuning과 실제 현장 데이터 사용은 데이터·보안·GPU 확인 �
 - `PUBLIC_PROXY`: 고정 revision의 공개 `kresnik/zeroth_korean` 샘플로 데이터 준비,
   3개 모델 비교, 자동 프록시 선택, LoRA, 양자화, 고정 Test, 보고서·SQLite 등록까지
   전체 동작을 검증합니다.
-- `SYNTHETIC_MANUFACTURING`: 저장소에 포함된 한국어 TTS 제조 문장 30개와 정답 전사로
+- `SYNTHETIC_MANUFACTURING`: 저장소에 포함된 한국어 TTS 제조 문장 600개와 정답 전사로
   실제 데이터 투입 전 동일한 모델 비교·LoRA·양자화·보고서 경로를 검증합니다.
 - `PRIVATE_MANUFACTURING`: `configs/manufacturing_private_template.yaml`과 승인된 제조
   녹음·검수 전사를 사용하며, 모델과 양자화 선택을 사람 검토로 강제합니다.

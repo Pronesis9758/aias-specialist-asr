@@ -12,11 +12,11 @@ paths:
 
 dataset:
   repo_id: local/synthetic-manufacturing-korean-asr
-  revision: generator-v1-20260810
+  revision: generator-v2-20260823
   license: project-functional-fixture
-  train_samples: 18
-  validation_samples: 6
-  test_samples: 6
+  train_samples: 360
+  validation_samples: 120
+  test_samples: 120
 
 model:
   backend: faster_whisper
@@ -57,7 +57,7 @@ training:
   repo_id: openai/whisper-small
   revision: main
   method: lora
-  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/synthetic-manufacturing-whisper-lora
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/synthetic-manufacturing-whisper-lora-v2
   train_batch_size: 4
   eval_batch_size: 4
   gradient_accumulation_steps: 2
@@ -77,7 +77,7 @@ distillation:
   teacher_revision: main
   student_repo_id: openai/whisper-tiny
   student_revision: main
-  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/synthetic-manufacturing-whisper-distilled
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/synthetic-manufacturing-whisper-distilled-v2
   hard_label_weight: 0.5
   temperature: 2.0
   train_batch_size: 2
@@ -97,8 +97,8 @@ governance:
 
 assessment:
   model_matrix: configs/benchmarks/synthetic_manufacturing_whisper_models.yaml
-  benchmark_id: synthetic-manufacturing-whisper-model-benchmark-v3
-  quantization_id: synthetic-manufacturing-whisper-quantization-v3
+  benchmark_id: synthetic-manufacturing-whisper-model-benchmark-v4
+  quantization_id: synthetic-manufacturing-whisper-quantization-v4
   hardware_profile: configs/hardware/colab_gpu_validation.yaml
 
 report:

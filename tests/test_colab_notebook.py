@@ -67,7 +67,7 @@ def test_colab_mode_comments_explain_each_distinct_purpose() -> None:
     )
 
     assert "공개 Zeroth 한국어 음성으로 전체 파이프라인만 검증" in mode_cell
-    assert "제조 용어가 포함된 합성 TTS 30개로 기능을 검증" in mode_cell
+    assert "제조 용어·난이도·소음 조건을 균형화한 합성 TTS 600개" in mode_cell
     assert "승인된 실제 제조 녹음과 사람 검수 전사" in mode_cell
     assert "tiny·base·small 후보 목록" in mode_cell
     assert "엄격한 거버넌스 조건" in mode_cell

@@ -5,11 +5,11 @@
 
 ## 구성
 
-- Train 18개, Validation 6개, Test 6개
+- Train 360개, Validation 120개, Test 120개(총 600개 고유 문장)
 - 16 kHz, mono, PCM 16-bit WAV
-- 제조 설비·안전·검사 문장 30개와 정답 전사
-- 조용한 음성, 팬 잡음, 설비 저주파 잡음 조건
-- split마다 서로 다른 TTS 속도 변형을 synthetic speaker ID로 기록
+- 일반 제조 문장, 용어 밀집 문장, 모델 번호가 포함된 오류 유발 문장을 각 200개 구성
+- 조용한 음성, 팬 잡음, 설비 저주파 잡음, 8 dB 고난도 공장 잡음 조건
+- split마다 겹치지 않는 TTS 속도 변형을 synthetic speaker ID로 기록
 - 각 WAV의 SHA-256과 생성 출처를 `manifest.csv`에 기록
 
 재생성 명령:
@@ -32,3 +32,6 @@ uv run python scripts/generate_synthetic_manufacturing_dataset.py --overwrite
 
 용도는 데이터 계약, ASR 추론, 모델 비교, LoRA, 양자화, 보고서 및 백데이터 생성 코드의 기능
 검증으로 제한합니다.
+
+IR·NN 후보와 임계값은 Validation 120개에서만 탐색하고 Test 120개는 최종 평가에만 사용합니다.
+합성 데이터 확대가 후처리 성능 향상을 보장하지 않으며, 실제 개선 여부는 생성된 비교표로 판단합니다.

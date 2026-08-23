@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import csv
 import hashlib
 import json
@@ -11,9 +10,11 @@ import random
 import shutil
 import subprocess
 import sys
+import tempfile
 import wave
 from array import array
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,51 +22,249 @@ DEFAULT_OUTPUT = ROOT / "data" / "sample" / "manufacturing_synthetic"
 VOICE_NAME = "Microsoft Heami Desktop"
 SAMPLE_RATE = 16_000
 APPROVAL_ID = "SYNTHETIC-FIXTURE-NO-HUMAN-DATA"
+DATASET_ID = "synthetic-manufacturing-korean-asr-v2"
+GENERATED_ON = "2026-08-23"
 
 SPLIT_RATES = {
-    "train": -2,
-    "validation": 0,
-    "test": 2,
+    "train": (-4, -3, -2),
+    "validation": (-1, 0),
+    "test": (1, 2, 3),
 }
 
-UTTERANCES = [
-    ("train", "press", "프레스 3호기 안전 센서를 점검합니다."),
-    ("train", "press", "프레스 3호기 유압 압력을 확인하세요."),
-    ("train", "bearing", "베어링 온도가 기준값을 초과했습니다."),
-    ("train", "bearing", "베어링 교체 작업을 시작합니다."),
-    ("train", "conveyor", "컨베이어 운전 속도를 낮춰 주세요."),
-    ("train", "conveyor", "컨베이어 비상 정지 버튼을 확인합니다."),
-    ("train", "vision", "비전 검사기 조명을 조정합니다."),
-    ("train", "vision", "비전 검사기에서 불량품을 검출했습니다."),
-    ("train", "equipment_anomaly", "설비 이상 경보가 발생했습니다."),
-    ("train", "equipment_anomaly", "설비 이상 원인을 점검해 주세요."),
-    ("train", "safety", "작업자는 보호 장갑을 착용하세요."),
-    ("train", "safety", "생산 라인 전원을 차단합니다."),
-    ("train", "motor", "모터 진동 수치를 기록해 주세요."),
-    ("train", "assembly", "조립 공정의 체결 토크를 확인합니다."),
-    ("train", "material", "자재 투입 수량을 다시 확인하세요."),
-    ("train", "cooling", "냉각수 누수 여부를 점검합니다."),
-    ("train", "robot", "로봇 팔의 동작 범위를 확인하세요."),
-    ("train", "quality", "품질 검사 결과를 작업 일지에 기록합니다."),
-    ("validation", "press", "프레스 3호기의 금형 위치를 조정합니다."),
-    ("validation", "bearing", "베어링 소음이 평소보다 크게 들립니다."),
-    ("validation", "conveyor", "컨베이어 센서에 이물질이 감지되었습니다."),
-    ("validation", "vision", "비전 검사기 카메라 초점을 맞춰 주세요."),
-    ("validation", "equipment_anomaly", "설비 이상 발생 시 즉시 관리자에게 보고하세요."),
-    ("validation", "packaging", "포장 공정의 라벨 부착 상태를 확인합니다."),
-    ("test", "press", "프레스 3호기 가동을 일시 중지합니다."),
-    ("test", "bearing", "베어링 윤활유 상태를 확인해 주세요."),
-    ("test", "conveyor", "컨베이어 위의 제품 간격을 조정합니다."),
-    ("test", "vision", "비전 검사기 판정 결과를 저장합니다."),
-    ("test", "equipment_anomaly", "설비 이상 경보를 해제하기 전에 원인을 확인하세요."),
-    ("test", "shipping", "출하 전 최종 품질 검사를 실시합니다."),
-]
+
+@dataclass(frozen=True)
+class Scenario:
+    scenario_id: str
+    canonical_term: str
+    related_term: str
+    subjects: tuple[str, ...]
+    components: tuple[str, ...]
+
+
+SCENARIOS = (
+    Scenario(
+        "press",
+        "프레스 3호기",
+        "피엘씨",
+        (
+            "프레스 3호기 금형부",
+            "프레스 3호기 유압부",
+            "프레스 3호기 투입부",
+            "프레스 3호기 배출부",
+            "프레스 3호기 안전 구역",
+        ),
+        ("안전 센서", "유압 압력", "금형 위치", "비상 정지 회로"),
+    ),
+    Scenario(
+        "bearing",
+        "베어링",
+        "설비 이상",
+        ("주축 베어링", "모터 베어링", "감속기 베어링", "펌프 베어링", "팬 베어링"),
+        ("온도", "진동", "윤활유", "회전 소음"),
+    ),
+    Scenario(
+        "conveyor",
+        "컨베이어",
+        "에이지브이",
+        (
+            "투입 컨베이어",
+            "검사 컨베이어",
+            "조립 컨베이어",
+            "포장 컨베이어",
+            "출하 컨베이어",
+        ),
+        ("운전 속도", "제품 간격", "정렬 센서", "비상 정지 버튼"),
+    ),
+    Scenario(
+        "vision",
+        "비전 검사기",
+        "에이오아이 검사기",
+        (
+            "전면 비전 검사기",
+            "후면 비전 검사기",
+            "조립 비전 검사기",
+            "포장 비전 검사기",
+            "출하 비전 검사기",
+        ),
+        ("카메라 초점", "조명 밝기", "검출 임계값", "불량 판정 결과"),
+    ),
+    Scenario(
+        "equipment_anomaly",
+        "설비 이상",
+        "에이치엠아이",
+        (
+            "설비 이상 감시 화면",
+            "설비 이상 경보 장치",
+            "설비 이상 분석 모듈",
+            "설비 이상 이력 화면",
+            "설비 이상 진단 서버",
+        ),
+        ("경보 코드", "발생 시각", "진동 추세", "복구 상태"),
+    ),
+    Scenario(
+        "plc",
+        "피엘씨",
+        "에이치엠아이",
+        ("프레스 피엘씨", "조립 피엘씨", "포장 피엘씨", "검사 피엘씨", "출하 피엘씨"),
+        ("입력 신호", "출력 신호", "인터록", "통신 상태"),
+    ),
+    Scenario(
+        "cnc",
+        "씨엔씨 선반",
+        "체결 토크",
+        (
+            "일 호기 씨엔씨 선반",
+            "이 호기 씨엔씨 선반",
+            "삼 호기 씨엔씨 선반",
+            "사 호기 씨엔씨 선반",
+            "오 호기 씨엔씨 선반",
+        ),
+        ("주축 회전수", "공구 보정값", "절삭유 유량", "가공 원점"),
+    ),
+    Scenario(
+        "agv",
+        "에이지브이",
+        "컨베이어",
+        (
+            "자재 운반 에이지브이",
+            "공정 이동 에이지브이",
+            "검사 이동 에이지브이",
+            "포장 이동 에이지브이",
+            "출하 이동 에이지브이",
+        ),
+        ("배터리 잔량", "주행 경로", "정지 센서", "도킹 위치"),
+    ),
+    Scenario(
+        "aoi",
+        "에이오아이 검사기",
+        "비전 검사기",
+        (
+            "전공정 에이오아이 검사기",
+            "후공정 에이오아이 검사기",
+            "표면 에이오아이 검사기",
+            "납땜 에이오아이 검사기",
+            "출하 에이오아이 검사기",
+        ),
+        ("검사 해상도", "조명 각도", "불량 좌표", "판정 임계값"),
+    ),
+    Scenario(
+        "welding_robot",
+        "용접 로봇",
+        "체결 토크",
+        (
+            "차체 용접 로봇",
+            "프레임 용접 로봇",
+            "브래킷 용접 로봇",
+            "패널 용접 로봇",
+            "보강재 용접 로봇",
+        ),
+        ("용접 전류", "용접 속도", "토치 위치", "보호 가스 압력"),
+    ),
+)
+
+DIFFICULTIES = ("normal", "term_dense", "error_prone")
+DIFFICULTY_SPLIT_COUNTS = {"train": 12, "validation": 4, "test": 4}
+MODEL_CODES = (
+    "엑스 백일",
+    "엑스 백이",
+    "케이 이백일",
+    "케이 이백이",
+    "에이 삼백일",
+    "에이 삼백이",
+    "엠 사백일",
+    "엠 사백이",
+    "큐 오백일",
+    "큐 오백이",
+    "티 육백일",
+    "티 육백이",
+    "브이 칠백일",
+    "브이 칠백이",
+    "알 팔백일",
+    "알 팔백이",
+    "에스 구백일",
+    "에스 구백이",
+    "지 천일",
+    "지 천이",
+)
+ACTION_STEMS = ("점검", "확인", "기록", "검증")
 
 NOISE_PROFILES = (
     ("quiet_tts", None, 0.0),
-    ("fan_noise_snr24db", 24.0, 120.0),
-    ("equipment_hum_snr18db", 18.0, 60.0),
+    ("fan_noise_snr20db", 20.0, 120.0),
+    ("equipment_hum_snr14db", 14.0, 60.0),
+    ("hard_factory_noise_snr8db", 8.0, 90.0),
 )
+
+
+def _sentence(scenario: Scenario, subject: str, component: str, difficulty: str) -> str:
+    action = ACTION_STEMS[scenario.components.index(component)]
+    combination_index = (
+        scenario.subjects.index(subject) * len(scenario.components)
+        + scenario.components.index(component)
+    )
+    if difficulty == "normal":
+        return f"{subject}의 {component} 상태를 {action}합니다."
+    if difficulty == "term_dense":
+        return (
+            f"{subject}의 {component} 값을 {action}하고 "
+            f"{scenario.related_term} 기록과 비교합니다."
+        )
+    model_code = MODEL_CODES[combination_index]
+    return (
+        f"{subject} 모델 {model_code}의 {component} 항목을 {action}한 뒤 "
+        f"{scenario.related_term} 상태를 확인합니다."
+    )
+
+
+def build_utterances(seed: int = 20_260_823) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    split_order = ("train", "validation", "test")
+    for scenario_index, scenario in enumerate(SCENARIOS):
+        for difficulty_index, difficulty in enumerate(DIFFICULTIES):
+            combinations = [
+                (subject, component)
+                for subject in scenario.subjects
+                for component in scenario.components
+            ]
+            random.Random(seed + scenario_index * 100 + difficulty_index).shuffle(combinations)
+            start = 0
+            for split in split_order:
+                count = DIFFICULTY_SPLIT_COUNTS[split]
+                for subject, component in combinations[start : start + count]:
+                    rows.append(
+                        {
+                            "split": split,
+                            "scenario_id": scenario.scenario_id,
+                            "difficulty_group": difficulty,
+                            "term_targets": (
+                                scenario.canonical_term
+                                if difficulty == "normal"
+                                else f"{scenario.canonical_term}|{scenario.related_term}"
+                            ),
+                            "reference_text": _sentence(
+                                scenario, subject, component, difficulty
+                            ),
+                        }
+                    )
+                start += count
+    split_rank = {split: index for index, split in enumerate(split_order)}
+    rows.sort(
+        key=lambda row: (
+            split_rank[row["split"]],
+            row["scenario_id"],
+            row["difficulty_group"],
+            row["reference_text"],
+        )
+    )
+    expected_counts = {"train": 360, "validation": 120, "test": 120}
+    if Counter(row["split"] for row in rows) != Counter(expected_counts):
+        raise AssertionError("Synthetic split construction did not produce 360/120/120")
+    if len({row["reference_text"] for row in rows}) != len(rows):
+        raise AssertionError("Synthetic reference texts must be unique across all splits")
+    return rows
+
+
+UTTERANCES = build_utterances()
 
 
 def _powershell() -> str:
@@ -75,11 +274,12 @@ def _powershell() -> str:
     return executable
 
 
-def _synthesize(text: str, output_path: Path, rate: int, voice: str) -> None:
-    escaped_text = text.replace("'", "''")
-    escaped_voice = voice.replace("'", "''")
-    escaped_path = str(output_path.resolve()).replace("'", "''")
+def _synthesize_batch(items: list[dict[str, str | int]], voice: str) -> None:
     script = f"""
+param(
+    [Parameter(Mandatory=$true)][string]$PayloadPath,
+    [Parameter(Mandatory=$true)][string]$VoiceName
+)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Speech
 $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
@@ -89,24 +289,53 @@ $format = [System.Speech.AudioFormat.SpeechAudioFormatInfo]::new(
     [System.Speech.AudioFormat.AudioChannel]::Mono
 )
 try {{
-    $synth.SelectVoice('{escaped_voice}')
-    $synth.Rate = {rate}
-    $synth.SetOutputToWaveFile('{escaped_path}', $format)
-    $synth.Speak('{escaped_text}')
+    $synth.SelectVoice($VoiceName)
+    $items = Get-Content -Raw -Encoding UTF8 -LiteralPath $PayloadPath | ConvertFrom-Json
+    $index = 0
+    foreach ($item in $items) {{
+        $synth.Rate = [int]$item.rate
+        $synth.SetOutputToWaveFile([string]$item.output_path, $format)
+        $synth.Speak([string]$item.text)
+        $synth.SetOutputToNull()
+        $index += 1
+        if (($index % 50) -eq 0) {{
+            Write-Output ("Synthesized {{0}}/{{1}}" -f $index, $items.Count)
+        }}
+    }}
 }} finally {{
     $synth.Dispose()
 }}
 """
-    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
-    result = subprocess.run(
-        [_powershell(), "-NoProfile", "-EncodedCommand", encoded],
-        capture_output=True,
-        check=False,
-        text=True,
-    )
+    with tempfile.TemporaryDirectory(prefix="aias-synthetic-tts-") as temporary:
+        temporary_dir = Path(temporary)
+        payload_path = temporary_dir / "tts_payload.json"
+        script_path = temporary_dir / "synthesize.ps1"
+        payload_path.write_text(
+            json.dumps(items, ensure_ascii=False), encoding="utf-8"
+        )
+        script_path.write_text(script, encoding="utf-8-sig")
+        result = subprocess.run(
+            [
+                _powershell(),
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script_path),
+                "-PayloadPath",
+                str(payload_path),
+                "-VoiceName",
+                voice,
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
     if result.returncode != 0:
         details = (result.stderr or result.stdout).strip()
-        raise RuntimeError(f"TTS synthesis failed for {output_path.name}: {details}")
+        raise RuntimeError(f"TTS batch synthesis failed: {details}")
+    if result.stdout.strip():
+        print(result.stdout.strip())
 
 
 def _add_noise(path: Path, snr_db: float | None, hum_hz: float, seed: int) -> None:
@@ -156,34 +385,68 @@ def generate_dataset(output_dir: Path, voice: str, overwrite: bool) -> Path:
     audio_dir = output_dir / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
 
-    rows: list[dict[str, str]] = []
+    synthesis_items: list[dict[str, str | int]] = []
+    planned_rows: list[dict[str, str | int | Path]] = []
     split_sequence: Counter[str] = Counter()
-    for global_index, (split, scenario, text) in enumerate(UTTERANCES, start=1):
+    for global_index, utterance in enumerate(UTTERANCES, start=1):
+        split = utterance["split"]
         split_sequence[split] += 1
         sample_id = f"syn_{split}_{split_sequence[split]:03d}"
         audio_path = audio_dir / f"{sample_id}.wav"
-        rate = SPLIT_RATES[split]
-        noise_name, snr_db, hum_hz = NOISE_PROFILES[(global_index - 1) % len(NOISE_PROFILES)]
-        _synthesize(text, audio_path, rate, voice)
+        split_index = split_sequence[split] - 1
+        rate = SPLIT_RATES[split][split_index % len(SPLIT_RATES[split])]
+        noise_name, snr_db, hum_hz = NOISE_PROFILES[split_index % len(NOISE_PROFILES)]
+        synthesis_items.append(
+            {
+                "text": utterance["reference_text"],
+                "output_path": str(audio_path),
+                "rate": rate,
+            }
+        )
+        planned_rows.append(
+            {
+                **utterance,
+                "global_index": global_index,
+                "sample_id": sample_id,
+                "audio_path_object": audio_path,
+                "rate": rate,
+                "noise_name": noise_name,
+                "snr_db": snr_db,
+                "hum_hz": hum_hz,
+            }
+        )
+
+    print(f"Synthesizing {len(synthesis_items)} unique Korean manufacturing utterances...")
+    _synthesize_batch(synthesis_items, voice)
+
+    rows: list[dict[str, str]] = []
+    for planned in planned_rows:
+        audio_path = Path(planned["audio_path_object"])
+        global_index = int(planned["global_index"])
+        snr_value = planned["snr_db"]
+        snr_db = None if snr_value is None else float(snr_value)
+        hum_hz = float(planned["hum_hz"])
         _add_noise(audio_path, snr_db, hum_hz, seed=20_260_810 + global_index)
         duration, digest = _wav_metadata(audio_path)
         rows.append(
             {
-                "sample_id": sample_id,
+                "sample_id": str(planned["sample_id"]),
                 "audio_path": f"audio/{audio_path.name}",
-                "reference_text": text,
-                "split": split,
+                "reference_text": str(planned["reference_text"]),
+                "split": str(planned["split"]),
                 "source": "synthetic_windows_system_speech",
                 "consent_status": "synthetic",
-                "speaker_id": f"synthetic_heami_rate_{rate:+d}",
-                "scenario_id": scenario,
-                "noise_condition": noise_name,
+                "speaker_id": f"synthetic_heami_rate_{int(planned['rate']):+d}",
+                "scenario_id": str(planned["scenario_id"]),
+                "difficulty_group": str(planned["difficulty_group"]),
+                "term_targets": str(planned["term_targets"]),
+                "noise_condition": str(planned["noise_name"]),
                 "approval_id": APPROVAL_ID,
                 "deidentified": "true",
                 "label_reviewer": "not_applicable_synthetic_source_text",
                 "label_review_status": "synthetic_generated",
                 "tts_voice": voice,
-                "tts_rate": str(rate),
+                "tts_rate": str(planned["rate"]),
                 "audio_duration_seconds": f"{duration:.3f}",
                 "audio_sha256": digest,
             }
@@ -196,8 +459,8 @@ def generate_dataset(output_dir: Path, voice: str, overwrite: bool) -> Path:
         writer.writerows(rows)
 
     provenance = {
-        "dataset_id": "synthetic-manufacturing-korean-asr-v1",
-        "generated_on": "2026-08-10",
+        "dataset_id": DATASET_ID,
+        "generated_on": GENERATED_ON,
         "generator": "scripts/generate_synthetic_manufacturing_dataset.py",
         "human_voice_data": False,
         "contains_personal_information": False,
@@ -205,12 +468,26 @@ def generate_dataset(output_dir: Path, voice: str, overwrite: bool) -> Path:
         "tts_voice": voice,
         "sample_rate_hz": SAMPLE_RATE,
         "sample_count": len(rows),
+        "unique_reference_count": len({row["reference_text"] for row in rows}),
         "split_counts": dict(Counter(row["split"] for row in rows)),
+        "difficulty_counts": dict(Counter(row["difficulty_group"] for row in rows)),
+        "noise_condition_counts": dict(Counter(row["noise_condition"] for row in rows)),
+        "scenario_counts": dict(Counter(row["scenario_id"] for row in rows)),
         "speaker_definition": (
-            "Synthetic rate variants of one installed Korean TTS voice; not real speakers"
+            "Seven split-disjoint rate variants of one installed Korean TTS voice; "
+            "not real speakers"
         ),
         "noise_profiles": [profile[0] for profile in NOISE_PROFILES],
-        "intended_use": "ASR pipeline, reporting, and artifact-contract functional testing",
+        "intended_use": (
+            "ASR pipeline, domain-term correction tuning on validation, held-out test "
+            "evaluation, reporting, and artifact-contract functional testing"
+        ),
+        "postprocessing_design": {
+            "train": "model training only",
+            "validation": "IR and nearest-neighbor thresholds and candidate selection",
+            "test": "held-out final evaluation only; never threshold tuning",
+            "guaranteed_improvement": False,
+        },
         "prohibited_claims": [
             "real manufacturing ASR accuracy",
             "human speaker generalization",

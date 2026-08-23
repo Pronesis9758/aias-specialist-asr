@@ -1,5 +1,5 @@
 correction_sweep:
-  id: synthetic-manufacturing-correction-sweep-v1
+  id: synthetic-manufacturing-correction-sweep-v2
   name: 합성 제조 음성 Validation 보정 안전성 탐색
   base_config: configs/synthetic_manufacturing_sample.yaml
   evaluation_split: validation
