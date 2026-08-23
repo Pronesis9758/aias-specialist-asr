@@ -26,6 +26,7 @@ from .utils import git_sha, new_run_id, utc_now, write_json
 class SpeechSeq2SeqCollator:
     processor: Any
     decoder_start_token_id: int
+    input_features_dtype: Any | None = None
 
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, Any]:
         feature_batch = [
@@ -36,6 +37,12 @@ class SpeechSeq2SeqCollator:
             for feature in features
         ]
         batch = self.processor.feature_extractor.pad(feature_batch, return_tensors="pt")
+        # Whisper's first convolution requires its input features and parameters to
+        # share a dtype.  A low-memory float16 model load does not automatically cast
+        # the float32 log-Mel features on every Transformers/Accelerate combination
+        # used by Colab, so make that contract explicit before Trainer moves the batch
+        # to the GPU.
+        batch = _match_input_features_dtype(batch, self.input_features_dtype)
         label_batch = self.processor.tokenizer.pad(
             [{"input_ids": feature["labels"]} for feature in features],
             return_tensors="pt",
@@ -45,6 +52,15 @@ class SpeechSeq2SeqCollator:
             labels = labels[:, 1:]
         batch["labels"] = labels
         return batch
+
+
+def _match_input_features_dtype(
+    batch: dict[str, Any], input_features_dtype: Any | None
+) -> dict[str, Any]:
+    """Cast Whisper log-Mel features to the loaded model's parameter dtype."""
+    if input_features_dtype is not None:
+        batch["input_features"] = batch["input_features"].to(dtype=input_features_dtype)
+    return batch
 
 
 def _path(root: Path, value: str) -> Path:
@@ -343,6 +359,7 @@ def train_whisper_lora(settings: Settings) -> Path:
         collator = SpeechSeq2SeqCollator(
             processor=processor,
             decoder_start_token_id=model.config.decoder_start_token_id,
+            input_features_dtype=next(model.parameters()).dtype,
         )
 
         def compute_metrics(prediction: Any) -> dict[str, float]:

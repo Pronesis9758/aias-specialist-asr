@@ -8,9 +8,30 @@ from aias_specialist.training import (
     _extract_input_features,
     _gradient_checkpointing_enabled,
     _lora_config_kwargs,
+    _match_input_features_dtype,
     _model_load_kwargs,
     _prediction_frame,
 )
+
+
+def test_whisper_collator_matches_input_features_to_model_dtype() -> None:
+    class TensorStub:
+        def __init__(self) -> None:
+            self.requested_dtype = None
+
+        def to(self, *, dtype):  # noqa: ANN001, ANN202
+            self.requested_dtype = dtype
+            return self
+
+    features = TensorStub()
+    batch = {"input_features": features, "attention_mask": "unchanged"}
+
+    result = _match_input_features_dtype(batch, "float16")
+
+    assert result is batch
+    assert result["input_features"] is features
+    assert features.requested_dtype == "float16"
+    assert result["attention_mask"] == "unchanged"
 
 
 def test_whisper_lora_config_uses_generic_peft_wrapper() -> None:
