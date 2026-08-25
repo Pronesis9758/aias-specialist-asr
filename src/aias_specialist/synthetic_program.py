@@ -486,6 +486,8 @@ async def _synthesize_one(
     output_dir: Path,
     retries: int = 3,
     request_timeout_seconds: float = 30.0,
+    retry_base_seconds: float = 2.0,
+    retry_max_seconds: float = 30.0,
 ) -> None:
     try:
         import edge_tts
@@ -584,14 +586,22 @@ async def _synthesize_one(
             raw_path.unlink(missing_ok=True)
             audio_path.unlink(missing_ok=True)
             if attempt == retries:
+                print(
+                    "[synthetic-tts] failed "
+                    f"sample_id={row['sample_id']} voice={row['tts_voice']} "
+                    f"rate={row['tts_rate']} pitch={row['tts_pitch']} "
+                    f"attempts={retries} error={type(exc).__name__}: {exc}",
+                    flush=True,
+                )
                 raise
+            delay = min(retry_max_seconds, retry_base_seconds * (2 ** (attempt - 1)))
             print(
                 "[synthetic-tts] retry "
                 f"sample_id={row['sample_id']} attempt={attempt}/{retries} "
-                f"error={type(exc).__name__}: {exc}",
+                f"delay_seconds={delay:g} error={type(exc).__name__}: {exc}",
                 flush=True,
             )
-            await asyncio.sleep(2**attempt)
+            await asyncio.sleep(delay)
 
 
 async def _synthesize_all(
@@ -600,6 +610,9 @@ async def _synthesize_all(
     concurrency: int,
     request_timeout_seconds: float,
     progress_every: int,
+    retries: int,
+    retry_base_seconds: float,
+    retry_max_seconds: float,
 ) -> None:
     semaphore = asyncio.Semaphore(concurrency)
     completed = 0
@@ -611,7 +624,10 @@ async def _synthesize_all(
             await _synthesize_one(
                 row,
                 output_dir,
+                retries=retries,
                 request_timeout_seconds=request_timeout_seconds,
+                retry_base_seconds=retry_base_seconds,
+                retry_max_seconds=retry_max_seconds,
             )
         async with lock:
             completed += 1
@@ -632,10 +648,16 @@ def synthesize_dataset(spec_path: str | Path, concurrency: int = 4) -> Path:
     validate_dataset_plan(plan, section)
     request_timeout_seconds = float(section.get("request_timeout_seconds", 30.0))
     progress_every = max(1, int(section.get("progress_every", 10)))
+    retries = max(1, int(section.get("tts_retries", 3)))
+    retry_base_seconds = max(0.0, float(section.get("tts_retry_base_seconds", 2.0)))
+    retry_max_seconds = max(
+        retry_base_seconds,
+        float(section.get("tts_retry_max_seconds", 30.0)),
+    )
     print(
         "[synthetic-tts] start "
         f"samples={len(plan)} concurrency={max(1, concurrency)} "
-        f"request_timeout_seconds={request_timeout_seconds:g}",
+        f"request_timeout_seconds={request_timeout_seconds:g} retries={retries}",
         flush=True,
     )
     asyncio.run(
@@ -645,6 +667,9 @@ def synthesize_dataset(spec_path: str | Path, concurrency: int = 4) -> Path:
             max(1, concurrency),
             request_timeout_seconds,
             progress_every,
+            retries,
+            retry_base_seconds,
+            retry_max_seconds,
         )
     )
 
