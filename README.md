@@ -184,6 +184,7 @@ aias train-whisper-distillation ... Teacher 지식을 경량 Student에 증류
 aias quantization-sweep ...         선택 모델의 양자화 비교
 aias select-quantization ...        사람의 양자화 선택과 이유 기록
 aias finalize-evaluation ...        고정 Test 최종평가
+aias confirmatory-evaluation ...   v1 설정을 고정한 신규 화자 Test v2 확인평가
 aias history                        누적 실행 이력 조회
 aias assessment-audit ...           심사기준별 제출 증빙 준비 상태 점검
 ```

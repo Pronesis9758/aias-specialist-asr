@@ -68,19 +68,34 @@ def _resolve(root: Path, value: str | Path) -> Path:
 
 def _speaker_profiles(section: dict[str, Any]) -> list[dict[str, str]]:
     voices = tuple(str(value) for value in section.get("voices", DEFAULT_VOICES))
+    configured_prosody = section.get("prosody_profiles")
+    if configured_prosody is None:
+        prosody = PROSODY
+    else:
+        if not isinstance(configured_prosody, list) or not configured_prosody:
+            raise ValueError("synthetic_dataset.prosody_profiles must be a non-empty list")
+        prosody = tuple(
+            (
+                str(item["id"]),
+                str(item["rate"]),
+                str(item["pitch"]),
+            )
+            for item in configured_prosody
+        )
     counts = section.get("speaker_profiles", {"train": 16, "validation": 4, "test": 4})
     if not isinstance(counts, dict):
         raise ValueError("synthetic_dataset.speaker_profiles must be a mapping")
+    speaker_prefix = str(section.get("speaker_id_prefix", "synthetic"))
     profiles: list[dict[str, str]] = []
     offset = 0
     for split in SPLITS:
         count = int(counts.get(split, 0))
         for local_index in range(count):
             voice = voices[(offset + local_index) % len(voices)]
-            style, rate, pitch = PROSODY[(offset + local_index) % len(PROSODY)]
+            style, rate, pitch = prosody[(offset + local_index) % len(prosody)]
             profiles.append(
                 {
-                    "speaker_id": f"synthetic_{split}_{local_index + 1:02d}_{style}",
+                    "speaker_id": f"{speaker_prefix}_{split}_{local_index + 1:02d}_{style}",
                     "split": split,
                     "voice": voice,
                     "rate": rate,
@@ -134,6 +149,38 @@ def _sentence(
     return spoken, reference, primary_reference
 
 
+def _confirmatory_sentence(
+    *,
+    index: int,
+    spoken_terms: list[str],
+    reference_terms: list[str],
+) -> tuple[str, str, str]:
+    area = AREAS[(index + 3) % len(AREAS)]
+    unit = UNITS[(index + 2) % len(UNITS)]
+    value = 15 + (index * 29) % 880
+    order = f"V2-{index + 1:04d}"
+    spoken_joined = ", ".join(spoken_terms)
+    reference_joined = ", ".join(reference_terms)
+    spoken = (
+        f"{area} 구역 교대 점검 {order} 결과를 보고합니다. {spoken_joined}의 표시 상태를 "
+        f"차례로 확인했습니다. 기준 수치 {value} {unit}는 허용 범위입니다."
+    )
+    reference = (
+        f"{area} 구역 교대 점검 {order} 결과를 보고합니다. {reference_joined}의 표시 상태를 "
+        f"차례로 확인했습니다. 기준 수치 {value} {unit}는 허용 범위입니다."
+    )
+    return spoken, reference, "|".join(reference_terms)
+
+
+def _confirmatory_negative_sentence(index: int) -> tuple[str, str, str]:
+    order = f"V2-N{index + 1:04d}"
+    sentence = (
+        f"오늘 교대 작업 인수인계 {order} 내용을 기록합니다. 담당 구역과 작업 순서를 "
+        "다시 확인하고 완료 시간을 문서에 남깁니다."
+    )
+    return sentence, sentence, ""
+
+
 def _primary_term_indexes(
     *,
     split: str,
@@ -183,44 +230,91 @@ def build_dataset_plan(spec_path: str | Path) -> pd.DataFrame:
         "split_counts", {"train": 6000, "validation": 600, "test": 600}
     )
     rows: list[dict[str, Any]] = []
+    dataset_role = str(section.get("dataset_role", "development"))
+    sample_prefix = str(section.get("sample_id_prefix", "syn7200"))
     for split_index, split in enumerate(SPLITS):
-        count = int(split_counts[split])
+        count = int(split_counts.get(split, 0))
+        if count <= 0:
+            continue
         split_profiles = [profile for profile in profiles if profile["split"] == split]
         if not split_profiles:
             raise ValueError(f"No synthetic speaker profiles configured for {split}")
+        negative_count = (
+            int(section.get("negative_test_samples", 0)) if split == "test" else 0
+        )
+        if negative_count < 0 or negative_count >= count:
+            raise ValueError("negative_test_samples must be between 0 and test count - 1")
+        positive_count = count - negative_count
         primary_indexes = _primary_term_indexes(
             split=split,
-            count=count,
+            count=positive_count,
             term_records=term_records,
             section=section,
             seed=seed + split_index,
         )
+        negative_positions: set[int] = set()
+        if negative_count:
+            positions = list(range(count))
+            random.Random(seed + 900 + split_index).shuffle(positions)
+            negative_positions = set(positions[:negative_count])
+        triple_count = (
+            int(section.get("triple_term_test_samples", 0)) if split == "test" else 0
+        )
+        if triple_count < 0 or triple_count > positive_count:
+            raise ValueError("triple_term_test_samples exceeds positive Test samples")
         secondary_order = list(range(len(term_records)))
         random.Random(seed + 100 + split_index).shuffle(secondary_order)
+        positive_index = 0
         for index in range(count):
-            primary = term_records[primary_indexes[index]]
-            secondary = None
-            # Held-out Test deliberately contains two terms per sentence so the
-            # 600-item set exercises at least 1,000 manufacturing-term occurrences.
-            if split == "test":
-                secondary = term_records[
-                    secondary_order[(index * 7 + 11) % len(secondary_order)]
-                ]
-                if secondary["canonical"] == primary["canonical"]:
+            if index in negative_positions:
+                spoken, reference, targets = _confirmatory_negative_sentence(index)
+                primary = None
+                secondary = None
+            else:
+                primary = term_records[primary_indexes[positive_index]]
+                secondary = None
+                tertiary = None
+                if split == "test":
                     secondary = term_records[
-                        secondary_order[(index * 7 + 12) % len(secondary_order)]
+                        secondary_order[(positive_index * 7 + 11) % len(secondary_order)]
                     ]
-            spoken, reference, targets = _sentence(
-                split=split,
-                index=index,
-                primary_spoken=primary["spoken"],
-                primary_reference=primary["canonical"],
-                secondary_spoken=secondary["spoken"] if secondary else None,
-                secondary_reference=secondary["canonical"] if secondary else None,
-            )
+                    if secondary["canonical"] == primary["canonical"]:
+                        secondary = term_records[
+                            secondary_order[(positive_index * 7 + 12) % len(secondary_order)]
+                        ]
+                if split == "test" and positive_index < triple_count:
+                    tertiary = term_records[
+                        secondary_order[(positive_index * 11 + 19) % len(secondary_order)]
+                    ]
+                    if tertiary["canonical"] in {
+                        primary["canonical"],
+                        secondary["canonical"] if secondary else "",
+                    }:
+                        tertiary = term_records[
+                            secondary_order[(positive_index * 11 + 20) % len(secondary_order)]
+                        ]
+                if dataset_role == "confirmatory_test":
+                    selected_terms = [primary, *([secondary] if secondary else [])]
+                    if tertiary:
+                        selected_terms.append(tertiary)
+                    spoken, reference, targets = _confirmatory_sentence(
+                        index=index,
+                        spoken_terms=[term["spoken"] for term in selected_terms],
+                        reference_terms=[term["canonical"] for term in selected_terms],
+                    )
+                else:
+                    spoken, reference, targets = _sentence(
+                        split=split,
+                        index=index,
+                        primary_spoken=primary["spoken"],
+                        primary_reference=primary["canonical"],
+                        secondary_spoken=secondary["spoken"] if secondary else None,
+                        secondary_reference=secondary["canonical"] if secondary else None,
+                    )
+                positive_index += 1
             profile = split_profiles[index % len(split_profiles)]
             noise_name, snr_db, hum_hz = NOISE_PROFILES[index % len(NOISE_PROFILES)]
-            sample_id = f"syn7200_{split}_{index + 1:04d}"
+            sample_id = f"{sample_prefix}_{split}_{index + 1:04d}"
             rows.append(
                 {
                     "sample_id": sample_id,
@@ -234,8 +328,16 @@ def build_dataset_plan(spec_path: str | Path) -> pd.DataFrame:
                     "tts_voice": profile["voice"],
                     "tts_rate": profile["rate"],
                     "tts_pitch": profile["pitch"],
-                    "scenario_id": f"{split}_sentence_family_{index % 12:02d}",
-                    "difficulty_group": "term_dense" if split == "test" else "normal",
+                    "scenario_id": (
+                        f"{split}_sentence_family_{index % 12:02d}"
+                        if dataset_role == "development"
+                        else f"{dataset_role}_{split}_family_{index % 18:02d}"
+                    ),
+                    "difficulty_group": (
+                        "domain_negative"
+                        if not targets
+                        else "term_dense" if split == "test" else "normal"
+                    ),
                     "term_targets": targets,
                     "noise_condition": noise_name,
                     "noise_snr_db": "" if snr_db is None else str(snr_db),
@@ -260,7 +362,11 @@ def _term_counts(frame: pd.DataFrame) -> Counter[str]:
 
 
 def validate_dataset_plan(frame: pd.DataFrame, section: dict[str, Any]) -> dict[str, Any]:
-    expected = {key: int(value) for key, value in section["split_counts"].items()}
+    expected = {
+        key: int(value)
+        for key, value in section["split_counts"].items()
+        if int(value) > 0
+    }
     observed = frame.groupby("split").size().to_dict()
     if observed != expected:
         raise ValueError(f"Split counts do not match: expected={expected}, observed={observed}")
@@ -273,36 +379,46 @@ def validate_dataset_plan(frame: pd.DataFrame, section: dict[str, Any]) -> dict[
     if frame["speaker_id"].nunique() < minimum_speakers:
         raise ValueError(f"At least {minimum_speakers} synthetic speaker profiles are required")
     train_counts = _term_counts(frame.loc[frame["split"].eq("train")])
-    minimum_train = int(section.get("minimum_train_occurrences_per_term", 100))
-    maximum_train = int(section.get("maximum_train_occurrences_per_term", 200))
-    outside = {
-        term: count
-        for term, count in train_counts.items()
-        if count < minimum_train or count > maximum_train
-    }
-    if outside:
-        raise ValueError(f"Train term coverage is outside the configured range: {outside}")
+    if expected.get("train", 0):
+        minimum_train = int(section.get("minimum_train_occurrences_per_term", 100))
+        maximum_train = int(section.get("maximum_train_occurrences_per_term", 200))
+        outside = {
+            term: count
+            for term, count in train_counts.items()
+            if count < minimum_train or count > maximum_train
+        }
+        if outside:
+            raise ValueError(f"Train term coverage is outside the configured range: {outside}")
     test_occurrences = sum(_term_counts(frame.loc[frame["split"].eq("test")]).values())
     minimum_test = int(section.get("minimum_test_term_occurrences", 1000))
     if test_occurrences < minimum_test:
         raise ValueError(
             f"Test term occurrences must be at least {minimum_test}: {test_occurrences}"
         )
+    negative_count = int(
+        frame.loc[frame["split"].eq("test"), "term_targets"].astype(str).eq("").sum()
+    )
+    minimum_negatives = int(section.get("minimum_negative_test_samples", 0))
+    if negative_count < minimum_negatives:
+        raise ValueError(
+            f"Negative Test samples must be at least {minimum_negatives}: {negative_count}"
+        )
     split_texts = {
-        split: set(frame.loc[frame["split"].eq(split), "reference_text"]) for split in SPLITS
+        split: set(frame.loc[frame["split"].eq(split), "reference_text"])
+        for split in expected
     }
-    if not (
-        split_texts["train"].isdisjoint(split_texts["validation"])
-        and split_texts["train"].isdisjoint(split_texts["test"])
-        and split_texts["validation"].isdisjoint(split_texts["test"])
-    ):
-        raise ValueError("Reference sentences must not cross data splits")
+    split_names = list(split_texts)
+    for left_index, left in enumerate(split_names):
+        for right in split_names[left_index + 1 :]:
+            if not split_texts[left].isdisjoint(split_texts[right]):
+                raise ValueError("Reference sentences must not cross data splits")
     return {
         "split_counts": observed,
         "speaker_profile_count": int(frame["speaker_id"].nunique()),
-        "train_term_occurrence_min": min(train_counts.values()),
-        "train_term_occurrence_max": max(train_counts.values()),
+        "train_term_occurrence_min": min(train_counts.values()) if train_counts else 0,
+        "train_term_occurrence_max": max(train_counts.values()) if train_counts else 0,
         "test_term_occurrences": test_occurrences,
+        "negative_test_samples": negative_count,
     }
 
 
@@ -544,6 +660,7 @@ def synthesize_dataset(spec_path: str | Path, concurrency: int = 4) -> Path:
             )
     provenance = {
         "dataset_id": str(section["id"]),
+        "dataset_role": str(section.get("dataset_role", "development")),
         "generated_at": utc_now().isoformat(),
         "human_voice_data": False,
         "contains_personal_information": False,
@@ -554,7 +671,11 @@ def synthesize_dataset(spec_path: str | Path, concurrency: int = 4) -> Path:
         "duration_hours": duration_hours,
         "target_duration_hours": target_duration_hours,
         "speaker_profile_count": int(manifest["speaker_id"].nunique()),
-        "selection_policy": "validation-only tuning; held-out test once after all choices",
+        "selection_policy": (
+            "frozen-model confirmatory evaluation; no tuning after cohort results"
+            if str(section.get("dataset_role", "development")) == "confirmatory_test"
+            else "validation-only tuning; held-out test once after all choices"
+        ),
         "limitations": [
             "Synthetic voices do not prove human-speaker or factory-noise generalization.",
             "Production readiness requires a separately approved real-world shadow evaluation.",

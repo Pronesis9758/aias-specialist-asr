@@ -593,7 +593,9 @@ def build_report(
     rows = [
         ("WER (lower is better)", "wer", -1),
         ("CER (lower is better)", "cer", -1),
+        ("Domain Term Precision", "domain_term_precision", 1),
         ("Domain Term Recall", "domain_term_recall", 1),
+        ("Domain Term F1-score", "domain_term_f1", 1),
         ("Mean Latency (seconds)", "mean_latency_seconds", 0),
         ("Mean Real-time Factor", "mean_real_time_factor", 0),
     ]
@@ -602,11 +604,21 @@ def build_report(
         corrected_value = float(metrics["corrected"][key])
         row = table.add_row().cells
         row[0].text = label
-        percent = key in {"wer", "cer", "domain_term_recall"}
+        percent = key in {
+            "wer",
+            "cer",
+            "domain_term_precision",
+            "domain_term_recall",
+            "domain_term_f1",
+        }
         delta = corrected_value - baseline_value
         applicable = not (
-            key == "domain_term_recall"
-            and not metrics["baseline"].get("domain_term_recall_applicable")
+            key in {"domain_term_precision", "domain_term_recall", "domain_term_f1"}
+            and not metrics["baseline"].get(
+                "domain_term_recall_applicable"
+                if key != "domain_term_precision"
+                else "domain_term_precision_applicable"
+            )
         )
         if applicable:
             row[1].text = _format_metric(baseline_value, percent)

@@ -13,6 +13,7 @@ from aias_specialist.synthetic_program import (
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "configs/data/synthetic_manufacturing_7200.yaml"
+V2_SPEC = ROOT / "configs/data/synthetic_manufacturing_test_v2.yaml"
 
 
 def test_full_scale_synthetic_plan_meets_research_contract() -> None:
@@ -60,6 +61,40 @@ def test_full_scale_spec_records_expected_duration_targets() -> None:
     assert hours == {"train": 10.0, "validation": 1.0, "test": 1.0}
     assert section["request_timeout_seconds"] == 30
     assert section["progress_every"] == 10
+
+
+def test_confirmatory_v2_is_new_speaker_sentence_and_sample_cohort() -> None:
+    v1 = build_dataset_plan(SPEC)
+    v2 = build_dataset_plan(V2_SPEC)
+
+    assert v2.groupby("split").size().to_dict() == {"test": 600}
+    assert v2["speaker_id"].nunique() == 30
+    assert v2["sample_id"].str.startswith("synv2_test_").all()
+    assert set(v1["speaker_id"]).isdisjoint(set(v2["speaker_id"]))
+    assert set(v1["reference_text"]).isdisjoint(set(v2["reference_text"]))
+    assert set(v1["sample_id"]).isdisjoint(set(v2["sample_id"]))
+
+    v1_acoustic_profiles = set(
+        v1[["tts_voice", "tts_rate", "tts_pitch"]].itertuples(index=False, name=None)
+    )
+    v2_acoustic_profiles = set(
+        v2[["tts_voice", "tts_rate", "tts_pitch"]].itertuples(index=False, name=None)
+    )
+    assert v1_acoustic_profiles.isdisjoint(v2_acoustic_profiles)
+
+
+def test_confirmatory_v2_measures_false_positives_and_dense_term_recall() -> None:
+    frame = build_dataset_plan(V2_SPEC)
+    negative = frame["term_targets"].eq("")
+    term_occurrences = sum(
+        len(value.split("|")) for value in frame.loc[~negative, "term_targets"]
+    )
+
+    assert int(negative.sum()) == 100
+    assert term_occurrences == 1050
+    assert set(frame.loc[negative, "difficulty_group"]) == {"domain_negative"}
+    assert set(frame.loc[~negative, "difficulty_group"]) == {"term_dense"}
+    assert frame["target_duration_seconds"].astype(float).sum() / 3600 == 1.0
 
 
 def test_edge_tts_request_timeout_prevents_indefinite_hang(

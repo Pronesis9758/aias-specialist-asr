@@ -39,6 +39,11 @@ def _write_summary(path: Path, settings: Settings, run_id: str, metrics: dict[st
     corrected_term_recall = (
         f"{corrected['domain_term_recall']:.4f}" if term_recall_applicable else "N/A"
     )
+    corrected_term_confusion = (
+        f"{corrected['domain_term_true_positive']}/"
+        f"{corrected['domain_term_false_positive']}/"
+        f"{corrected['domain_term_false_negative']}"
+    )
     quality_gate = metrics["quality_gate"]
     target_status = quality_gate["status"].upper()
     text = f"""# Run summary: {run_id}
@@ -53,6 +58,9 @@ def _write_summary(path: Path, settings: Settings, run_id: str, metrics: dict[st
 - WER absolute reduction: {improvement["wer_absolute_reduction"]:.4f}
 - Baseline domain term recall: {baseline_term_recall}
 - Corrected domain term recall: {corrected_term_recall}
+- Corrected domain term precision: {corrected['domain_term_precision']:.4f}
+- Corrected domain term F1-score: {corrected['domain_term_f1']:.4f}
+- Corrected domain term TP/FP/FN: {corrected_term_confusion}
 - Manufacturing quality target status: {target_status}
 - Target domain term recall: >= {settings.quality_targets.minimum_domain_term_recall:.2%}
 - Target CER: <= {settings.quality_targets.maximum_cer:.2%}

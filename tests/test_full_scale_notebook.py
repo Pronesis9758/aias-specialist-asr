@@ -15,6 +15,8 @@ def test_full_scale_notebook_has_cost_gates_and_test_once_contract() -> None:
     assert "GENERATE_SYNTHETIC_AUDIO = False" in source
     assert "RUN_A100_LORA = False" in source
     assert "RUN_FINAL_TEST_ONCE = False" in source
+    assert "GENERATE_CONFIRMATORY_V2_AUDIO = False" in source
+    assert "RUN_CONFIRMATORY_V2_ONCE = False" in source
     assert "plan-synthetic-dataset" in source
     assert "lora-learning-curve" in source
     assert "merge-selected-lora" in source
@@ -22,6 +24,9 @@ def test_full_scale_notebook_has_cost_gates_and_test_once_contract() -> None:
     assert "mine-term-errors" in source
     assert "select-deployment-profiles" in source
     assert "finalize-evaluation" in source
+    assert "confirmatory-evaluation" in source
+    assert "synthetic_manufacturing_test_v2.yaml" in source
+    assert "v1_v2_comparison.csv" in source
 
 
 def test_full_scale_notebook_explains_synthetic_evidence_limit() -> None:
@@ -31,6 +36,7 @@ def test_full_scale_notebook_explains_synthetic_evidence_limit() -> None:
     assert "생산 준비 완료를 주장" in source
     assert "실제 배포 전 승인된 shadow test" in source
     assert "Validation" in source
+    assert "v2 결과는 설정 선택이나 재튜닝에 사용하지 않습니다" in source
 
 
 def test_full_scale_a100_config_keeps_effective_batch_and_avoids_duplicate_eval() -> None:

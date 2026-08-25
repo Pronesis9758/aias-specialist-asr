@@ -1,0 +1,43 @@
+synthetic_dataset:
+  id: synthetic-manufacturing-korean-asr-speaker-heldout-test-v2
+  dataset_role: confirmatory_test
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/synthetic/manufacturing_test_v2
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  seed: 20260825
+  sample_id_prefix: synv2
+  speaker_id_prefix: synthetic_v2
+  request_timeout_seconds: 30
+  progress_every: 10
+  split_counts:
+    train: 0
+    validation: 0
+    test: 600
+  target_duration_hours:
+    test: 1.0
+  # v1의 합성 화자 ID와 발화 속도·피치 조합을 사용하지 않는 확인용 cohort입니다.
+  speaker_profiles:
+    train: 0
+    validation: 0
+    test: 30
+  minimum_speaker_profiles: 30
+  minimum_test_term_occurrences: 1000
+  # 잘못된 제조 용어 삽입(FP)을 측정할 수 있도록 제조 용어가 없는 문장을 포함합니다.
+  negative_test_samples: 100
+  minimum_negative_test_samples: 100
+  # 500개 양성 문장 중 50개는 3개 용어를 포함해 총 용어 노출을 1,050회로 맞춥니다.
+  triple_term_test_samples: 50
+  voices:
+    - ko-KR-SunHiNeural
+    - ko-KR-InJoonNeural
+    - ko-KR-HyunsuNeural
+  prosody_profiles:
+    - {id: v2_slow_deep, rate: "-18%", pitch: "-13Hz"}
+    - {id: v2_slow_bright, rate: "-15%", pitch: "+13Hz"}
+    - {id: v2_measured_low, rate: "-10%", pitch: "-11Hz"}
+    - {id: v2_measured_high, rate: "-6%", pitch: "+11Hz"}
+    - {id: v2_neutral_deep, rate: "-2%", pitch: "-9Hz"}
+    - {id: v2_neutral_bright, rate: "+3%", pitch: "+9Hz"}
+    - {id: v2_quick_low, rate: "+7%", pitch: "-10Hz"}
+    - {id: v2_quick_high, rate: "+14%", pitch: "+10Hz"}
+    - {id: v2_urgent_deep, rate: "+18%", pitch: "-12Hz"}
+    - {id: v2_urgent_bright, rate: "+20%", pitch: "+12Hz"}

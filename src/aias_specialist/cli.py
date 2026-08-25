@@ -6,6 +6,7 @@ from pathlib import Path
 import typer
 
 from .config import load_settings
+from .confirmatory import run_confirmatory_evaluation
 from .correction_sweep import run_correction_sweep, select_correction_candidate
 from .decoding_experiments import run_selected_lora_decoding_sweep
 from .distillation import train_whisper_distillation
@@ -345,6 +346,33 @@ def finalize_evaluation(
 ) -> None:
     """Run one final held-out test evaluation after model and precision selection."""
     result = run_final_evaluation(selection, config)
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+@app.command("confirmatory-evaluation")
+def confirmatory_evaluation(
+    selection: Path = typer.Option(..., exists=True, dir_okay=False),
+    config: Path = typer.Option(..., exists=True, dir_okay=False),
+    manifest: Path = typer.Option(..., exists=True, dir_okay=False),
+    cohort_id: str = typer.Option("speaker-heldout-v2"),
+    expected_samples: int = typer.Option(600, min=1),
+    minimum_speakers: int = typer.Option(30, min=1),
+    minimum_term_occurrences: int = typer.Option(1000, min=0),
+    minimum_negative_samples: int = typer.Option(100, min=0),
+    reference_result: Path | None = typer.Option(None, exists=True, dir_okay=False),
+) -> None:
+    """Evaluate a new speaker-held-out cohort without changing the frozen v1 selection."""
+    result = run_confirmatory_evaluation(
+        selection,
+        config,
+        manifest,
+        cohort_id=cohort_id,
+        expected_samples=expected_samples,
+        minimum_speakers=minimum_speakers,
+        minimum_term_occurrences=minimum_term_occurrences,
+        minimum_negative_samples=minimum_negative_samples,
+        reference_result_path=reference_result,
+    )
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 

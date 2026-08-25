@@ -63,6 +63,25 @@ def test_domain_term_recall_is_not_applicable_without_terms() -> None:
     assert metrics["domain_term_recall_applicable"] is False
 
 
+def test_domain_term_precision_recall_and_f1_use_same_sample_term_grain() -> None:
+    predictions = pd.DataFrame(
+        {
+            "reference_text": ["PLC와 HMI를 확인합니다.", "일반 작업을 확인합니다."],
+            "prediction_text": ["PLC를 확인합니다.", "AGV 작업을 확인합니다."],
+        }
+    )
+    terms = load_domain_terms(ROOT / "data/domain_terms/manufacturing_terms.csv")
+
+    metrics = evaluate_predictions(predictions, terms)
+
+    assert metrics["domain_term_true_positive"] == 1
+    assert metrics["domain_term_false_positive"] == 1
+    assert metrics["domain_term_false_negative"] == 1
+    assert metrics["domain_term_precision"] == 0.5
+    assert metrics["domain_term_recall"] == 0.5
+    assert metrics["domain_term_f1"] == 0.5
+
+
 def test_information_retrieval_corrects_unlisted_near_match() -> None:
     predictions = pd.DataFrame({"prediction_text": ["콘베이아 모터를 점검합니다."]})
     terms = load_domain_terms(ROOT / "data/domain_terms/manufacturing_terms.csv")
