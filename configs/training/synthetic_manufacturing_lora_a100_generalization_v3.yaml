@@ -1,0 +1,36 @@
+lora_learning_curve:
+  id: synthetic-manufacturing-lora-a100-generalization-v3
+  name: Turbo·Large-v3 화자 일반화 A100 LoRA 학습곡선
+  base_config: configs/synthetic_manufacturing_generalization_v3.yaml
+  require_a100: true
+  minimum_gpu_memory_gb: 35
+  evaluation_split: validation
+  # v2는 실패 확인 세트로 동결하고 이 개발용 Validation에서만 모델과 학습량을 선택합니다.
+  models:
+    - id: turbo
+      repo_id: openai/whisper-large-v3-turbo
+      revision: main
+    - id: large-v3
+      repo_id: openai/whisper-large-v3
+      revision: main
+  stages:
+    - id: pilot-5h
+      train_samples: 3000
+      max_steps: 375
+      eval_steps: 375
+      save_steps: 375
+    - id: target-10h
+      train_samples: 6000
+      max_steps: 750
+      eval_steps: 750
+      save_steps: 750
+    - id: extended-15h
+      train_samples: 9000
+      max_steps: 1125
+      eval_steps: 1125
+      save_steps: 1125
+  selection:
+    primary_metric: domain_term_recall
+    tie_breakers: [cer, wer]
+    minimum_recall_gain_between_stages: 0.005
+    test_policy: select_on_new_validation_then_run_once_on_new_speaker_heldout_v3

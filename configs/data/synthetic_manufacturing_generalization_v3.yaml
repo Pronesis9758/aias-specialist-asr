@@ -1,0 +1,74 @@
+synthetic_dataset:
+  id: synthetic-manufacturing-korean-asr-generalization-development-v3
+  dataset_role: development
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/synthetic/manufacturing_generalization_v3
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  seed: 20260826
+  sample_id_prefix: syngen3
+  speaker_id_prefix: synthetic_gen3
+  request_timeout_seconds: 30
+  progress_every: 10
+  split_counts:
+    train: 9000
+    validation: 1200
+    test: 0
+  target_duration_hours:
+    train: 15.0
+    validation: 2.0
+  # v2 확인 실패를 재평가하지 않고, 별도 개발용 화자·문장으로 일반화를 개선합니다.
+  speaker_profiles:
+    train: 72
+    validation: 24
+    test: 0
+  minimum_speaker_profiles: 96
+  profile_assignment: cartesian
+  require_unique_acoustic_profiles: true
+  minimum_train_occurrences_per_term: 180
+  maximum_train_occurrences_per_term: 300
+  priority_train_occurrences_per_term: 270
+  priority_terms:
+    - CNC 선반
+    - 1호기
+    - 2호기
+    - 3호기
+    - 4호기
+    - 5호기
+    - 프레스 3호기
+    - 용접 로봇
+    - PLC
+    - HMI
+    - AGV
+    - AOI 검사기
+    - X101
+    - G1001
+    - G1002
+    - M401
+    - K201
+    - R801
+    - R802
+    - V702
+  # Microsoft의 현재 ko-KR 표준 Neural 음성 목록을 사용해 성별·음색 편향을 줄입니다.
+  voices:
+    - ko-KR-SunHiNeural
+    - ko-KR-InJoonNeural
+    - ko-KR-HyunsuNeural
+    - ko-KR-BongJinNeural
+    - ko-KR-GookMinNeural
+    - ko-KR-JiMinNeural
+    - ko-KR-SeoHyeonNeural
+    - ko-KR-SoonBokNeural
+    - ko-KR-YuJinNeural
+  # v2에서 취약했던 밝은 고음·빠른 발화와 공장 소음 조건을 Validation에도 포함합니다.
+  prosody_profiles:
+    - {id: very_slow_deep, rate: "-20%", pitch: "-14Hz"}
+    - {id: slow_deep, rate: "-15%", pitch: "-10Hz"}
+    - {id: measured_low, rate: "-10%", pitch: "-6Hz"}
+    - {id: neutral_low, rate: "-4%", pitch: "-3Hz"}
+    - {id: neutral, rate: "+0%", pitch: "+0Hz"}
+    - {id: neutral_bright, rate: "+3%", pitch: "+4Hz"}
+    - {id: quick_low, rate: "+7%", pitch: "-5Hz"}
+    - {id: quick_bright, rate: "+10%", pitch: "+7Hz"}
+    - {id: fast_low, rate: "+14%", pitch: "-8Hz"}
+    - {id: fast_bright, rate: "+16%", pitch: "+10Hz"}
+    - {id: urgent_deep, rate: "+18%", pitch: "-12Hz"}
+    - {id: urgent_bright, rate: "+20%", pitch: "+12Hz"}

@@ -170,9 +170,13 @@ def lora_learning_curve(
         exists=True,
         dir_okay=False,
     ),
+    max_stage: str | None = typer.Option(
+        None,
+        help="Run cumulative stages only through this stage id; completed workers are reused.",
+    ),
 ) -> None:
     """Compare Medium, Turbo, and Large-v3 LoRA stages on validation only."""
-    comparison = run_lora_learning_curve(spec)
+    comparison = run_lora_learning_curve(spec, max_stage=max_stage)
     typer.echo(f"LoRA learning curve: {comparison}")
 
 

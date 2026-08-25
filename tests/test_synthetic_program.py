@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from aias_specialist.synthetic_program import (
+    _speaker_profiles,
     _synthesize_one,
     build_dataset_plan,
     load_synthetic_spec,
@@ -14,6 +15,7 @@ from aias_specialist.synthetic_program import (
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "configs/data/synthetic_manufacturing_7200.yaml"
 V2_SPEC = ROOT / "configs/data/synthetic_manufacturing_test_v2.yaml"
+GENERALIZATION_V3_SPEC = ROOT / "configs/data/synthetic_manufacturing_generalization_v3.yaml"
 
 
 def test_full_scale_synthetic_plan_meets_research_contract() -> None:
@@ -95,6 +97,47 @@ def test_confirmatory_v2_measures_false_positives_and_dense_term_recall() -> Non
     assert set(frame.loc[negative, "difficulty_group"]) == {"domain_negative"}
     assert set(frame.loc[~negative, "difficulty_group"]) == {"term_dense"}
     assert frame["target_duration_seconds"].astype(float).sum() / 3600 == 1.0
+
+
+def test_generalization_v3_uses_disjoint_cartesian_acoustic_profiles() -> None:
+    frame = build_dataset_plan(GENERALIZATION_V3_SPEC)
+
+    assert frame.groupby("split").size().to_dict() == {
+        "train": 9000,
+        "validation": 1200,
+    }
+    assert frame["speaker_id"].nunique() == 96
+    assert frame.groupby("speaker_id")["split"].nunique().max() == 1
+    acoustic = frame[["speaker_id", "tts_voice", "tts_rate", "tts_pitch"]].drop_duplicates()
+    assert len(acoustic) == 96
+    assert acoustic[["tts_voice", "tts_rate", "tts_pitch"]].drop_duplicates().shape[0] == 96
+
+    train_profiles = set(
+        acoustic.loc[
+            acoustic["speaker_id"].str.contains("_train_"),
+            ["tts_voice", "tts_rate", "tts_pitch"],
+        ].itertuples(index=False, name=None)
+    )
+    validation_profiles = set(
+        acoustic.loc[
+            acoustic["speaker_id"].str.contains("_validation_"),
+            ["tts_voice", "tts_rate", "tts_pitch"],
+        ].itertuples(index=False, name=None)
+    )
+    assert train_profiles.isdisjoint(validation_profiles)
+
+
+def test_generalization_v3_rejects_acoustic_profile_overflow() -> None:
+    with pytest.raises(ValueError, match="unique voice x prosody capacity"):
+        _speaker_profiles(
+            {
+                "profile_assignment": "cartesian",
+                "require_unique_acoustic_profiles": True,
+                "voices": ["ko-KR-SunHiNeural"],
+                "prosody_profiles": [{"id": "one", "rate": "+0%", "pitch": "+0Hz"}],
+                "speaker_profiles": {"train": 2, "validation": 0, "test": 0},
+            }
+        )
 
 
 def test_edge_tts_request_timeout_prevents_indefinite_hang(

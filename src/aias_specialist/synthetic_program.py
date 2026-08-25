@@ -85,14 +85,38 @@ def _speaker_profiles(section: dict[str, Any]) -> list[dict[str, str]]:
     counts = section.get("speaker_profiles", {"train": 16, "validation": 4, "test": 4})
     if not isinstance(counts, dict):
         raise ValueError("synthetic_dataset.speaker_profiles must be a mapping")
+    assignment = str(section.get("profile_assignment", "aligned_cycle"))
+    if assignment not in {"aligned_cycle", "cartesian"}:
+        raise ValueError(
+            "synthetic_dataset.profile_assignment must be aligned_cycle or cartesian"
+        )
+    acoustic_capacity = len(voices) * len(prosody)
+    requested_profiles = sum(int(counts.get(split, 0)) for split in SPLITS)
+    require_unique = bool(section.get("require_unique_acoustic_profiles", False))
+    if assignment == "cartesian" and require_unique and requested_profiles > acoustic_capacity:
+        raise ValueError(
+            "Requested speaker profiles exceed the unique voice x prosody capacity: "
+            f"{requested_profiles} > {acoustic_capacity}"
+        )
     speaker_prefix = str(section.get("speaker_id_prefix", "synthetic"))
     profiles: list[dict[str, str]] = []
     offset = 0
     for split in SPLITS:
         count = int(counts.get(split, 0))
         for local_index in range(count):
-            voice = voices[(offset + local_index) % len(voices)]
-            style, rate, pitch = prosody[(offset + local_index) % len(prosody)]
+            profile_index = offset + local_index
+            if assignment == "cartesian":
+                # 음성별로 모든 속도·피치 조합을 순회해 화자 ID만 늘고 실제 음향 조합은
+                # 반복되는 문제를 방지합니다. split offset을 공유하므로 train/validation의
+                # 음향 조합도 요청 용량 내에서는 겹치지 않습니다.
+                voice = voices[profile_index % len(voices)]
+                style, rate, pitch = prosody[
+                    (profile_index // len(voices)) % len(prosody)
+                ]
+            else:
+                # 기존 v1/v2의 불변 데이터 계획과 재현성을 보존합니다.
+                voice = voices[profile_index % len(voices)]
+                style, rate, pitch = prosody[profile_index % len(prosody)]
             profiles.append(
                 {
                     "speaker_id": f"{speaker_prefix}_{split}_{local_index + 1:02d}_{style}",
@@ -391,7 +415,7 @@ def validate_dataset_plan(frame: pd.DataFrame, section: dict[str, Any]) -> dict[
             raise ValueError(f"Train term coverage is outside the configured range: {outside}")
     test_occurrences = sum(_term_counts(frame.loc[frame["split"].eq("test")]).values())
     minimum_test = int(section.get("minimum_test_term_occurrences", 1000))
-    if test_occurrences < minimum_test:
+    if expected.get("test", 0) and test_occurrences < minimum_test:
         raise ValueError(
             f"Test term occurrences must be at least {minimum_test}: {test_occurrences}"
         )

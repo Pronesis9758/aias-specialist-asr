@@ -131,7 +131,21 @@ def _rank(frame: pd.DataFrame) -> pd.DataFrame:
     return ranked.sort_values(["stage_order", "rank", "model_id"], na_position="last")
 
 
-def run_lora_learning_curve(spec_path: str | Path) -> Path:
+def _stages_through(stages: list[dict[str, Any]], max_stage: str | None) -> list[dict[str, Any]]:
+    """Return the cumulative learning-curve stages up to the requested checkpoint."""
+    if max_stage is None:
+        return stages
+    stage_ids = [str(stage["id"]) for stage in stages]
+    if max_stage not in stage_ids:
+        raise ValueError(f"Unknown max_stage {max_stage!r}; choose one of {stage_ids}")
+    return stages[: stage_ids.index(max_stage) + 1]
+
+
+def run_lora_learning_curve(
+    spec_path: str | Path,
+    *,
+    max_stage: str | None = None,
+) -> Path:
     path = Path(spec_path).expanduser().resolve()
     section = _load_spec(path)
     root = _root(path)
@@ -142,6 +156,7 @@ def run_lora_learning_curve(spec_path: str | Path) -> Path:
     stages = section.get("stages")
     if not isinstance(models, list) or not models or not isinstance(stages, list) or not stages:
         raise ValueError("LoRA learning curve requires non-empty models and stages")
+    stages = _stages_through(stages, max_stage)
     resolve_model_revisions(
         settings.paths.model_lock,
         [
