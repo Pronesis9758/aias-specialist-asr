@@ -24,6 +24,8 @@ model:
   backend: fixture
   repo_id: fixture/replaced-by-frozen-selection
   revision: frozen-selection
+  # load_settings 단계의 필수 경로이며 실제 평가는 고정된 selection의 local_dir로 교체합니다.
+  local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/replaced-by-frozen-selection
   language: ko
   device: cuda
   compute_type: float16
