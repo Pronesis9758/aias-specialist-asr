@@ -13,6 +13,7 @@ from aias_specialist.training import (
     _model_load_kwargs,
     _prediction_frame,
     _preprocess_num_proc,
+    _required_training_splits,
 )
 
 
@@ -69,6 +70,14 @@ def test_whisper_preprocessing_worker_count_is_positive() -> None:
 
     with pytest.raises(ValueError, match="preprocess_num_proc"):
         _preprocess_num_proc({"preprocess_num_proc": 0})
+
+
+def test_validation_training_does_not_require_or_open_test_split() -> None:
+    assert _required_training_splits("validation") == {"train", "validation"}
+    assert _required_training_splits("test") == {"train", "validation", "test"}
+
+    with pytest.raises(ValueError, match="evaluation_split"):
+        _required_training_splits("development")
 
 
 def test_whisper_lora_uses_low_memory_float16_loading_by_default() -> None:

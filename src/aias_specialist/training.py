@@ -116,6 +116,17 @@ def _preprocess_num_proc(values: dict[str, Any]) -> int:
     return workers
 
 
+def _required_training_splits(evaluation_split: str) -> set[str]:
+    """Return only the manifest splits that the requested experiment may access."""
+    split = evaluation_split.strip().lower()
+    if split not in {"validation", "test"}:
+        raise ValueError("training.evaluation_split must be validation or test")
+    required = {"train", "validation"}
+    if split == "test":
+        required.add("test")
+    return required
+
+
 def _model_load_kwargs(values: dict[str, Any], torch_module: Any) -> dict[str, Any]:
     """Build memory-conscious Transformers loading options for Colab GPU training.
 
@@ -324,10 +335,14 @@ def train_whisper_lora(settings: Settings) -> Path:
             backend="faster_whisper",
             governance=settings.governance,
         )
+        comparison_split = str(values.get("evaluation_split", "test")).strip().lower()
+        required_splits = _required_training_splits(comparison_split)
         splits = set(prepared["split"].str.lower())
-        if not {"train", "validation", "test"}.issubset(splits):
+        if not required_splits.issubset(splits):
+            missing = sorted(required_splits - splits)
             raise ValueError(
-                "Training manifest must contain train, validation, and test splits for comparison"
+                "Training manifest is missing split(s) required for "
+                f"{comparison_split} comparison: {', '.join(missing)}"
             )
         terms = load_domain_terms(settings.paths.domain_terms)
         terms.to_csv(run_dir / "domain_terms.snapshot.csv", index=False, encoding="utf-8-sig")
@@ -367,9 +382,6 @@ def train_whisper_lora(settings: Settings) -> Path:
         full_dataset_frame = prepared[
             ["sample_id", "audio_path", "reference_text", "split", "source", "consent_status"]
         ].rename(columns={"audio_path": "audio", "reference_text": "sentence"})
-        comparison_split = str(values.get("evaluation_split", "test")).strip().lower()
-        if comparison_split not in {"validation", "test"}:
-            raise ValueError("training.evaluation_split must be validation or test")
         train_sample_limit = int(values.get("train_sample_limit", 0))
         if train_sample_limit < 0:
             raise ValueError("training.train_sample_limit must be zero or greater")
