@@ -39,3 +39,12 @@ def test_final_notebook_refreshes_editable_install_for_running_colab_kernel() ->
     assert "sys.path.insert(0, PROJECT_SRC)" in source
     assert "importlib.invalidate_caches()" in source
     assert "import aias_specialist" in source
+
+
+def test_final_notebook_keeps_long_running_colab_cell_ids_stable() -> None:
+    notebook = nbformat.read(NOTEBOOK, as_version=4)
+    cell_ids = [cell.id for cell in notebook.cells]
+
+    assert len(cell_ids) == 24
+    assert len(set(cell_ids)) == len(cell_ids)
+    assert cell_ids[13] == "f71d3408"

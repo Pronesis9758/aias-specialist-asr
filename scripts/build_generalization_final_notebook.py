@@ -9,6 +9,36 @@ import nbformat as nbf
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "notebooks/colab_generalization_final_validation.ipynb"
 
+# Colab associates a running execution with the notebook cell ID.  Keep these
+# IDs stable across generated notebook revisions so a dependency/comment fix
+# does not orphan a long-running A100 execution during page reload.
+CELL_IDS = (
+    "1ed6af27",
+    "bf4017c0",
+    "3779aca1",
+    "89b0f35a",
+    "6a078123",
+    "175e8123",
+    "68044418",
+    "a1314da6",
+    "6584b02b",
+    "0be7d42d",
+    "3c0ba4f6",
+    "8aeed3a3",
+    "f0d6e038",
+    "f71d3408",
+    "66bc5ecd",
+    "eccd8111",
+    "d5957444",
+    "8b37ddef",
+    "70d91e96",
+    "bcb4e4e5",
+    "46037080",
+    "ab1a0c78",
+    "9c605dbf",
+    "95098165",
+)
+
 
 def build() -> Path:
     notebook = nbf.v4.new_notebook()
@@ -257,6 +287,10 @@ def build() -> Path:
             "    print('WER:', f\"{independent['wer']:.2%}\")"
         ),
     ]
+    if len(notebook["cells"]) != len(CELL_IDS):
+        raise RuntimeError("Stable Colab cell ID list must match the generated cell count.")
+    for cell, cell_id in zip(notebook["cells"], CELL_IDS, strict=True):
+        cell["id"] = cell_id
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     nbf.write(notebook, OUTPUT)
     return OUTPUT
