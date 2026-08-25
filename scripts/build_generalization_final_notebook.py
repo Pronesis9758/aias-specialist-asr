@@ -1,0 +1,257 @@
+# ruff: noqa: E501 - notebook source strings intentionally preserve readable Colab lines.
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import nbformat as nbf
+
+ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = ROOT / "notebooks/colab_generalization_final_validation.ipynb"
+
+
+def build() -> Path:
+    notebook = nbf.v4.new_notebook()
+    notebook["metadata"] = {
+        "accelerator": "GPU",
+        "colab": {"name": OUTPUT.name, "provenance": []},
+        "kernelspec": {"display_name": "Python 3", "name": "python3"},
+    }
+    notebook["cells"] = [
+        nbf.v4.new_markdown_cell(
+            "# 제조 ASR 일반화 최종 검증 — v1·v2 회귀평가와 독립 Test v3\n\n"
+            "신규 일반화 개발 데이터에서 Validation 1위로 선택된 large-v3 5시간 LoRA를 고정한 뒤, "
+            "디코딩·후처리·양자화를 Validation에서만 선택합니다. 기존 Test v1과 실패 이력이 있는 v2는 "
+            "회복 여부를 보는 회귀평가로 사용하고, 완전히 분리된 신규 Test v3만 독립 확인평가로 사용합니다.\n\n"
+            "> 모든 음성은 AI 합성 데이터입니다. 결과는 합성 음향 프로필 일반화 근거이며 실제 작업자·공장 "
+            "성능이나 생산 준비 완료를 증명하지 않습니다."
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 0. 실행 승인 스위치\n\n"
+            "기본값은 비용 작업을 막기 위해 False입니다. 이번 승인 실행에서는 두 값을 True로 변경합니다. "
+            "완료 결과는 불변 경로에서 재사용되어 같은 Test를 반복 추론하지 않습니다."
+        ),
+        nbf.v4.new_code_cell(
+            "GITHUB_REPO_URL = 'https://github.com/Pronesis9758/aias-specialist-asr.git'\n"
+            "GITHUB_BRANCH = 'codex/whisper-benchmark-quantization'\n"
+            "PROJECT_DIR = '/content/AIAS'\n"
+            "DRIVE_ROOT = '/content/drive/MyDrive/AI_Specialist_ASR_Project'\n\n"
+            "# 신규 Test v3 WAV가 아직 없을 때만 True로 실행합니다.\n"
+            "GENERATE_TEST_V3_AUDIO = False\n"
+            "# 병합·Validation 선택·v1/v2/v3 평가·통합 집계를 실행합니다.\n"
+            "RUN_FINAL_GENERALIZATION = False"
+        ),
+        nbf.v4.new_markdown_cell("## 1. A100·고용량 RAM·Google Drive 확인"),
+        nbf.v4.new_code_cell(
+            "import os\n"
+            "import subprocess\n"
+            "import sys\n"
+            "from pathlib import Path\n\n"
+            "import torch\n"
+            "from google.colab import drive\n\n"
+            "drive_root = Path('/content/drive/MyDrive')\n"
+            "if not drive_root.is_dir():\n"
+            "    drive.mount('/content/drive')\n"
+            "if not drive_root.is_dir():\n"
+            "    raise RuntimeError('Google Drive 연결을 확인할 수 없습니다.')\n"
+            "if not torch.cuda.is_available():\n"
+            "    raise RuntimeError('GPU 런타임이 필요합니다.')\n"
+            "gpu_name = torch.cuda.get_device_name(0)\n"
+            "gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3\n"
+            "if 'A100' not in gpu_name.upper() or gpu_memory < 35:\n"
+            "    raise RuntimeError(f'A100 40GB 이상이 필요합니다: {gpu_name} {gpu_memory:.1f}GB')\n"
+            "print('GPU:', gpu_name, f'{gpu_memory:.1f}GB')\n"
+            "!free -h"
+        ),
+        nbf.v4.new_markdown_cell("## 2. 최신 코드 동기화와 기존 의존성 복원"),
+        nbf.v4.new_code_cell(
+            "if not Path(PROJECT_DIR).exists():\n"
+            "    subprocess.run(['git', 'clone', '--branch', GITHUB_BRANCH, '--single-branch', GITHUB_REPO_URL, PROJECT_DIR], check=True)\n"
+            "else:\n"
+            "    subprocess.run(['git', '-C', PROJECT_DIR, 'fetch', 'origin', GITHUB_BRANCH], check=True)\n"
+            "    subprocess.run(['git', '-C', PROJECT_DIR, 'checkout', GITHUB_BRANCH], check=True)\n"
+            "    subprocess.run(['git', '-C', PROJECT_DIR, 'merge', '--ff-only', f'origin/{GITHUB_BRANCH}'], check=True)\n"
+            "os.chdir(PROJECT_DIR)\n"
+            "print('Git commit:', subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())\n"
+            "print('Python:', sys.version)"
+        ),
+        nbf.v4.new_code_cell(
+            "# 저장소에 선언된 train extra만 설치하며 별도의 임의 패키지 조합은 만들지 않습니다.\n"
+            "%pip uninstall -y torchao gradio gradio-client\n"
+            "%pip install -q -e '.[train]' 'transformers>=4.46,<5' 'peft>=0.14,<0.19' 'edge-tts>=7,<8'\n\n"
+            "def run_aias(*args):\n"
+            "    command = [sys.executable, '-m', 'aias_specialist.cli', *args]\n"
+            "    print('\\nRunning:', ' '.join(command), flush=True)\n"
+            "    subprocess.run(command, check=True, env={**os.environ, 'PYTHONUNBUFFERED': '1'})"
+        ),
+        nbf.v4.new_markdown_cell("## 3. 기존 데이터·pilot 결과와 Test v3 계획 확인"),
+        nbf.v4.new_code_cell(
+            "import json\n"
+            "import pandas as pd\n"
+            "import yaml\n\n"
+            "GENERALIZATION_CONFIG = 'configs/synthetic_manufacturing_generalization_v3.yaml'\n"
+            "LORA_DIR = Path(DRIVE_ROOT) / 'artifacts/training/synthetic-manufacturing-lora-a100-generalization-v3'\n"
+            "LORA_SELECTION = LORA_DIR / 'lora_selection.yaml'\n"
+            "DEV_MANIFEST = Path(DRIVE_ROOT) / 'data/synthetic/manufacturing_generalization_v3/manifest.csv'\n"
+            "V1_MANIFEST = Path(DRIVE_ROOT) / 'data/synthetic/manufacturing_7200/manifest.csv'\n"
+            "V2_MANIFEST = Path(DRIVE_ROOT) / 'data/synthetic/manufacturing_test_v2/manifest.csv'\n"
+            "TEST_V3_SPEC = 'configs/data/synthetic_manufacturing_test_v3.yaml'\n"
+            "TEST_V3_ROOT = Path(DRIVE_ROOT) / 'data/synthetic/manufacturing_test_v3'\n"
+            "TEST_V3_MANIFEST = TEST_V3_ROOT / 'manifest.csv'\n\n"
+            "required = [LORA_SELECTION, DEV_MANIFEST, V1_MANIFEST, V2_MANIFEST]\n"
+            "missing = [str(path) for path in required if not path.exists()]\n"
+            "if missing:\n"
+            "    raise FileNotFoundError(f'필수 기존 산출물이 없습니다: {missing}')\n"
+            "curve = pd.read_csv(LORA_DIR / 'lora_learning_curve.csv')\n"
+            "pilot = curve.loc[curve['stage_id'].eq('pilot-5h')].sort_values('rank')\n"
+            "display(pilot[['model_id', 'train_samples', 'domain_term_recall', 'cer', 'wer', 'rank']])\n"
+            "selection_payload = yaml.safe_load(LORA_SELECTION.read_text(encoding='utf-8'))\n"
+            "if selection_payload['model_id'] != 'large-v3':\n"
+            "    raise RuntimeError(f\"pilot-5h 고정 선택이 large-v3가 아닙니다: {selection_payload['model_id']}\")\n"
+            "run_aias('plan-synthetic-dataset', '--spec', TEST_V3_SPEC)\n"
+            "test_v3_plan = pd.read_csv(TEST_V3_ROOT / 'manifest.plan.csv')\n"
+            "display(test_v3_plan.groupby('difficulty_group').size().rename('samples'))\n"
+            "display(json.loads((TEST_V3_ROOT / 'plan_summary.json').read_text(encoding='utf-8')))"
+        ),
+        nbf.v4.new_markdown_cell("## 4. 신규 독립 Test v3 합성 및 교차 무결성 검사"),
+        nbf.v4.new_code_cell(
+            "if GENERATE_TEST_V3_AUDIO:\n"
+            "    run_aias('synthesize-dataset', '--spec', TEST_V3_SPEC, '--concurrency', '4')\n"
+            "else:\n"
+            "    print('Test v3 음성 생성을 건너뜁니다. 최초 실행에서만 True로 변경하세요.')\n"
+            "if RUN_FINAL_GENERALIZATION and not TEST_V3_MANIFEST.exists():\n"
+            "    raise FileNotFoundError('Test v3 최종 manifest가 없습니다. 먼저 음성을 생성하세요.')\n"
+            "if TEST_V3_MANIFEST.exists():\n"
+            "    from aias_specialist.confirmatory import validate_confirmatory_cohort\n"
+            "    audit = validate_confirmatory_cohort(\n"
+            "        V1_MANIFEST, TEST_V3_MANIFEST,\n"
+            "        additional_reference_manifest_paths=[V2_MANIFEST, DEV_MANIFEST],\n"
+            "        expected_samples=600, minimum_speakers=30,\n"
+            "        minimum_term_occurrences=1000, minimum_negative_samples=100,\n"
+            "    )\n"
+            "    print(json.dumps(audit, ensure_ascii=False, indent=2))"
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 5. large-v3 5시간 LoRA 병합과 Validation 디코딩 선택\n\n"
+            "Test를 열기 전에 새 Validation 1,200건만 사용하여 beam·hotwords·VAD를 선택합니다."
+        ),
+        nbf.v4.new_code_cell(
+            "if RUN_FINAL_GENERALIZATION:\n"
+            "    run_aias('merge-selected-lora', '--selection', str(LORA_SELECTION), '--config', GENERALIZATION_CONFIG)\n"
+            "    run_aias('decoding-sweep-selected-lora', '--selection', str(LORA_SELECTION), '--config', GENERALIZATION_CONFIG)\n"
+            "lora_payload = yaml.safe_load(LORA_SELECTION.read_text(encoding='utf-8'))\n"
+            "DECODING_ID = f\"synthetic-lora-decoding-{lora_payload['selection_id']}\"\n"
+            "DECODING_DIR = Path(DRIVE_ROOT) / 'artifacts/benchmarks' / DECODING_ID\n"
+            "DECODING_SELECTION = DECODING_DIR / 'model_selection.yaml'\n"
+            "if DECODING_SELECTION.exists():\n"
+            "    display(pd.read_csv(DECODING_DIR / 'benchmark_comparison.csv'))"
+        ),
+        nbf.v4.new_markdown_cell("## 6. Validation IR·NN 안전성 탐색"),
+        nbf.v4.new_code_cell(
+            "CORRECTION_ID = f\"generalization-v3-correction-{lora_payload['selection_id']}\"\n"
+            "CORRECTION_DIR = Path(DRIVE_ROOT) / 'artifacts/correction' / CORRECTION_ID\n"
+            "CORRECTION_SELECTION = CORRECTION_DIR / 'correction_selection.yaml'\n"
+            "if RUN_FINAL_GENERALIZATION:\n"
+            "    correction_spec = yaml.safe_load(Path('configs/correction/synthetic_manufacturing_generalization_v3.yaml').read_text(encoding='utf-8'))\n"
+            "    correction_spec['correction_sweep']['id'] = CORRECTION_ID\n"
+            "    runtime_correction = Path('/content/aias_generalization_correction.yaml')\n"
+            "    runtime_correction.write_text(yaml.safe_dump(correction_spec, allow_unicode=True, sort_keys=False), encoding='utf-8')\n"
+            "    run_aias('correction-sweep', '--spec', str(runtime_correction), '--selection', str(DECODING_SELECTION))\n"
+            "    if not CORRECTION_SELECTION.exists():\n"
+            "        run_aias('select-correction', '--sweep-dir', str(CORRECTION_DIR), '--reviewer', 'AUTOMATED_SYNTHETIC_VALIDATION', '--reason', 'Validation 품질 및 문장 악화율 gate 기준 선택', '--automated-proxy')\n"
+            "if CORRECTION_SELECTION.exists():\n"
+            "    display(pd.read_csv(CORRECTION_DIR / 'correction_sweep_comparison.csv'))"
+        ),
+        nbf.v4.new_markdown_cell("## 7. Validation FP16·INT8 비교와 정확도 우선 선택"),
+        nbf.v4.new_code_cell(
+            "QUANT_ID = f\"generalization-v3-quantization-{lora_payload['selection_id']}\"\n"
+            "QUANT_DIR = Path(DRIVE_ROOT) / 'artifacts/quantization' / QUANT_ID\n"
+            "QUANT_SELECTION = QUANT_DIR / 'quantization_selection.yaml'\n"
+            "RUNTIME_FINAL_CONFIG = Path('/content/aias_generalization_final_config.yaml')\n"
+            "if RUN_FINAL_GENERALIZATION:\n"
+            "    final_config = yaml.safe_load(Path(GENERALIZATION_CONFIG).read_text(encoding='utf-8'))\n"
+            "    correction_choice = yaml.safe_load(CORRECTION_SELECTION.read_text(encoding='utf-8'))['selection']['correction']\n"
+            "    final_config['correction'] = correction_choice\n"
+            "    RUNTIME_FINAL_CONFIG.write_text(yaml.safe_dump(final_config, allow_unicode=True, sort_keys=False), encoding='utf-8')\n"
+            "    quant_spec = yaml.safe_load(Path('configs/quantization/synthetic_manufacturing_generalization_v3.yaml').read_text(encoding='utf-8'))\n"
+            "    quant_spec['quantization']['id'] = QUANT_ID\n"
+            "    quant_spec['quantization']['base_config'] = str(RUNTIME_FINAL_CONFIG)\n"
+            "    runtime_quant = Path('/content/aias_generalization_quantization.yaml')\n"
+            "    runtime_quant.write_text(yaml.safe_dump(quant_spec, allow_unicode=True, sort_keys=False), encoding='utf-8')\n"
+            "    run_aias('quantization-sweep', '--spec', str(runtime_quant), '--selection', str(DECODING_SELECTION))\n"
+            "    quant_table = pd.read_csv(QUANT_DIR / 'quantization_comparison.csv')\n"
+            "    display(quant_table)\n"
+            "    completed = quant_table.loc[quant_table['status'].eq('completed')].copy()\n"
+            "    passing = completed.loc[completed['quality_target_pass'].astype(bool)]\n"
+            "    if passing.empty:\n"
+            "        raise RuntimeError('품질 gate를 통과한 양자화 후보가 없습니다.')\n"
+            "    accuracy_choice = passing.sort_values(['domain_term_recall', 'cer', 'wer'], ascending=[False, True, True]).iloc[0]\n"
+            "    if not QUANT_SELECTION.exists():\n"
+            "        run_aias('select-quantization', '--quantization-dir', str(QUANT_DIR), '--variant-id', str(accuracy_choice['member_id']), '--reviewer', 'AUTOMATED_SYNTHETIC_VALIDATION', '--reason', 'Validation Recall 우선, CER/WER 순위로 고정', '--automated-proxy')"
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 8. 설정 고정 후 Test v1·v2·v3 평가\n\n"
+            "v1과 v2는 회귀평가이며, v2가 v3 개발 데이터 설계에 영향을 주었다는 사실을 명시합니다. "
+            "Test v3는 세 기존 manifest와 문장·화자·음성 hash·음향 프로필이 겹치지 않는 독립 확인평가입니다."
+        ),
+        nbf.v4.new_code_cell(
+            "V1_RUNTIME_CONFIG = Path('/content/aias_generalization_v1_eval.yaml')\n"
+            "V1_RESULT = QUANT_DIR / 'final_test_result.json'\n"
+            "V2_RESULT = QUANT_DIR / 'confirmatory/generalization-regression-v2/confirmatory_test_result.json'\n"
+            "V3_RESULT = QUANT_DIR / 'confirmatory/independent-heldout-v3/confirmatory_test_result.json'\n"
+            "if RUN_FINAL_GENERALIZATION:\n"
+            "    v1_config = yaml.safe_load(Path('configs/evaluation/synthetic_manufacturing_generalization_v1.yaml').read_text(encoding='utf-8'))\n"
+            "    v1_config['correction'] = yaml.safe_load(CORRECTION_SELECTION.read_text(encoding='utf-8'))['selection']['correction']\n"
+            "    V1_RUNTIME_CONFIG.write_text(yaml.safe_dump(v1_config, allow_unicode=True, sort_keys=False), encoding='utf-8')\n"
+            "    run_aias('finalize-evaluation', '--selection', str(QUANT_SELECTION), '--config', str(V1_RUNTIME_CONFIG))\n"
+            "    run_aias('confirmatory-evaluation', '--selection', str(QUANT_SELECTION), '--config', str(V1_RUNTIME_CONFIG), '--manifest', str(V2_MANIFEST), '--cohort-id', 'generalization-regression-v2', '--cohort-role', 'regression', '--development-influence', '--expected-samples', '600', '--reference-result', str(V1_RESULT), '--additional-reference-manifest', str(DEV_MANIFEST))\n"
+            "    run_aias('confirmatory-evaluation', '--selection', str(QUANT_SELECTION), '--config', str(V1_RUNTIME_CONFIG), '--manifest', str(TEST_V3_MANIFEST), '--cohort-id', 'independent-heldout-v3', '--cohort-role', 'confirmatory', '--expected-samples', '600', '--reference-result', str(V1_RESULT), '--additional-reference-manifest', str(V2_MANIFEST), '--additional-reference-manifest', str(DEV_MANIFEST))"
+        ),
+        nbf.v4.new_markdown_cell("## 9. 통합 지표·95% 신뢰구간·v2 전후 paired 비교"),
+        nbf.v4.new_code_cell(
+            "GENERALIZATION_RESULT_DIR = Path(DRIVE_ROOT) / 'artifacts/generalization/final-large-v3-pilot5h'\n"
+            "historical_candidates = sorted(Path(DRIVE_ROOT).glob('artifacts/quantization/*/confirmatory/speaker-heldout-v2/confirmatory_test_result.json'))\n"
+            "historical_v2 = None\n"
+            "for candidate in historical_candidates:\n"
+            "    payload = json.loads(candidate.read_text(encoding='utf-8'))\n"
+            "    metrics = payload.get('metrics', {}).get('test_v2', {})\n"
+            "    if abs(float(metrics.get('domain_term_recall', -1)) - 0.8233) < 0.01:\n"
+            "        historical_v2 = candidate\n"
+            "        break\n"
+            "if RUN_FINAL_GENERALIZATION:\n"
+            "    command = ['generalization-summary', '--v1-result', str(V1_RESULT), '--v2-result', str(V2_RESULT), '--v3-result', str(V3_RESULT), '--config', str(V1_RUNTIME_CONFIG), '--output-dir', str(GENERALIZATION_RESULT_DIR), '--bootstrap-resamples', '1000']\n"
+            "    if historical_v2 is not None:\n"
+            "        command.extend(['--historical-v2-result', str(historical_v2)])\n"
+            "    run_aias(*command)\n"
+            "comparison_path = GENERALIZATION_RESULT_DIR / 'generalization_comparison.csv'\n"
+            "if comparison_path.exists():\n"
+            "    display(pd.read_csv(comparison_path))\n"
+            "    display(pd.read_csv(GENERALIZATION_RESULT_DIR / 'generalization_confidence_intervals.csv'))\n"
+            "    before_after = GENERALIZATION_RESULT_DIR / 'test_v2_before_after.csv'\n"
+            "    if before_after.exists():\n"
+            "        display(pd.read_csv(before_after))"
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 10. 연구 결론 판정\n\n"
+            "독립 Test v3가 Recall≥85%, CER≤7%, WER≤15%를 모두 통과해야 합성 음향 조건 일반화가 "
+            "확인된 것으로 판정합니다. 실제 현장 적용은 별도 승인된 shadow 평가와 사람 검수를 거쳐야 합니다."
+        ),
+        nbf.v4.new_code_cell(
+            "if comparison_path.exists():\n"
+            "    results = pd.read_csv(comparison_path)\n"
+            "    independent = results.loc[results['cohort'].eq('test_v3')].iloc[0]\n"
+            "    print('INDEPENDENT_TEST_V3_GATE:', 'PASS' if independent['quality_gate_pass'] else 'FAIL')\n"
+            "    print('Recall:', f\"{independent['domain_term_recall']:.2%}\")\n"
+            "    print('Precision:', f\"{independent['domain_term_precision']:.2%}\")\n"
+            "    print('F1:', f\"{independent['domain_term_f1']:.2%}\")\n"
+            "    print('CER:', f\"{independent['cer']:.2%}\")\n"
+            "    print('WER:', f\"{independent['wer']:.2%}\")"
+        ),
+    ]
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    nbf.write(notebook, OUTPUT)
+    return OUTPUT
+
+
+if __name__ == "__main__":
+    print(build())

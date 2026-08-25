@@ -178,30 +178,57 @@ def _confirmatory_sentence(
     index: int,
     spoken_terms: list[str],
     reference_terms: list[str],
+    cohort_code: str = "V2",
+    template_version: str = "v1",
 ) -> tuple[str, str, str]:
     area = AREAS[(index + 3) % len(AREAS)]
     unit = UNITS[(index + 2) % len(UNITS)]
     value = 15 + (index * 29) % 880
-    order = f"V2-{index + 1:04d}"
+    order = f"{cohort_code}-{index + 1:04d}"
     spoken_joined = ", ".join(spoken_terms)
     reference_joined = ", ".join(reference_terms)
-    spoken = (
-        f"{area} 구역 교대 점검 {order} 결과를 보고합니다. {spoken_joined}의 표시 상태를 "
-        f"차례로 확인했습니다. 기준 수치 {value} {unit}는 허용 범위입니다."
-    )
-    reference = (
-        f"{area} 구역 교대 점검 {order} 결과를 보고합니다. {reference_joined}의 표시 상태를 "
-        f"차례로 확인했습니다. 기준 수치 {value} {unit}는 허용 범위입니다."
-    )
+    if template_version == "v1":
+        spoken = (
+            f"{area} 구역 교대 점검 {order} 결과를 보고합니다. {spoken_joined}의 표시 상태를 "
+            f"차례로 확인했습니다. 기준 수치 {value} {unit}는 허용 범위입니다."
+        )
+        reference = (
+            f"{area} 구역 교대 점검 {order} 결과를 보고합니다. {reference_joined}의 표시 상태를 "
+            f"차례로 확인했습니다. 기준 수치 {value} {unit}는 허용 범위입니다."
+        )
+    elif template_version == "v2":
+        spoken = (
+            f"{area} 공정 설비 확인 {order} 건을 기록합니다. {spoken_joined}의 동작과 표시 값을 "
+            f"순서대로 점검했습니다. 현장 계측값 {value} {unit}는 관리 기준 내 유지 중입니다."
+        )
+        reference = (
+            f"{area} 공정 설비 확인 {order} 건을 기록합니다. {reference_joined}의 동작과 표시 값을 "
+            f"순서대로 점검했습니다. 현장 계측값 {value} {unit}는 관리 기준 내 유지 중입니다."
+        )
+    else:
+        raise ValueError(f"Unknown confirmatory sentence_template_version: {template_version}")
     return spoken, reference, "|".join(reference_terms)
 
 
-def _confirmatory_negative_sentence(index: int) -> tuple[str, str, str]:
-    order = f"V2-N{index + 1:04d}"
-    sentence = (
-        f"오늘 교대 작업 인수인계 {order} 내용을 기록합니다. 담당 구역과 작업 순서를 "
-        "다시 확인하고 완료 시간을 문서에 남깁니다."
-    )
+def _confirmatory_negative_sentence(
+    index: int,
+    *,
+    cohort_code: str = "V2",
+    template_version: str = "v1",
+) -> tuple[str, str, str]:
+    order = f"{cohort_code}-N{index + 1:04d}"
+    if template_version == "v1":
+        sentence = (
+            f"오늘 교대 작업 인수인계 {order} 내용을 기록합니다. 담당 구역과 작업 순서를 "
+            "다시 확인하고 완료 시간을 문서에 남깁니다."
+        )
+    elif template_version == "v2":
+        sentence = (
+            f"금일 현장 순회 기록 {order} 내용을 정리합니다. 작업 위치와 담당 순서를 "
+            "확인하고 점검 완료 시각을 일지에 등록합니다."
+        )
+    else:
+        raise ValueError(f"Unknown confirmatory sentence_template_version: {template_version}")
     return sentence, sentence, ""
 
 
@@ -256,6 +283,8 @@ def build_dataset_plan(spec_path: str | Path) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     dataset_role = str(section.get("dataset_role", "development"))
     sample_prefix = str(section.get("sample_id_prefix", "syn7200"))
+    confirmatory_code = str(section.get("confirmatory_code", "V2"))
+    confirmatory_template = str(section.get("sentence_template_version", "v1"))
     for split_index, split in enumerate(SPLITS):
         count = int(split_counts.get(split, 0))
         if count <= 0:
@@ -291,7 +320,11 @@ def build_dataset_plan(spec_path: str | Path) -> pd.DataFrame:
         positive_index = 0
         for index in range(count):
             if index in negative_positions:
-                spoken, reference, targets = _confirmatory_negative_sentence(index)
+                spoken, reference, targets = _confirmatory_negative_sentence(
+                    index,
+                    cohort_code=confirmatory_code,
+                    template_version=confirmatory_template,
+                )
                 primary = None
                 secondary = None
             else:
@@ -325,6 +358,8 @@ def build_dataset_plan(spec_path: str | Path) -> pd.DataFrame:
                         index=index,
                         spoken_terms=[term["spoken"] for term in selected_terms],
                         reference_terms=[term["canonical"] for term in selected_terms],
+                        cohort_code=confirmatory_code,
+                        template_version=confirmatory_template,
                     )
                 else:
                     spoken, reference, targets = _sentence(

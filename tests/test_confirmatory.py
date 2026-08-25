@@ -76,6 +76,34 @@ def test_confirmatory_cohort_requires_disjoint_speakers_sentences_and_audio(
         )
 
 
+def test_confirmatory_cohort_checks_additional_reference_manifests(
+    tmp_path: Path,
+) -> None:
+    v1 = _manifest(
+        tmp_path / "v1.csv",
+        [_row("v1", 1, "PLC 상태를 확인합니다.", "speaker-v1")],
+    )
+    development = _manifest(
+        tmp_path / "development.csv",
+        [_row("dev", 1, "HMI 상태를 확인합니다.", "speaker-dev")],
+    )
+    candidate = _manifest(
+        tmp_path / "v3.csv",
+        [_row("v3", 1, "HMI 상태를 확인합니다.", "speaker-v3")],
+    )
+
+    with pytest.raises(ValueError, match="reference_text"):
+        validate_confirmatory_cohort(
+            v1,
+            candidate,
+            additional_reference_manifest_paths=[development],
+            expected_samples=1,
+            minimum_speakers=1,
+            minimum_term_occurrences=1,
+            minimum_negative_samples=0,
+        )
+
+
 def test_confirmatory_evaluation_freezes_v1_selection_and_writes_three_cohorts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "configs/data/synthetic_manufacturing_7200.yaml"
 V2_SPEC = ROOT / "configs/data/synthetic_manufacturing_test_v2.yaml"
 GENERALIZATION_V3_SPEC = ROOT / "configs/data/synthetic_manufacturing_generalization_v3.yaml"
+TEST_V3_SPEC = ROOT / "configs/data/synthetic_manufacturing_test_v3.yaml"
 
 
 def test_full_scale_synthetic_plan_meets_research_contract() -> None:
@@ -138,6 +139,40 @@ def test_generalization_v3_rejects_acoustic_profile_overflow() -> None:
                 "speaker_profiles": {"train": 2, "validation": 0, "test": 0},
             }
         )
+
+
+def test_independent_test_v3_is_disjoint_from_all_prior_dataset_plans() -> None:
+    v1 = build_dataset_plan(SPEC)
+    v2 = build_dataset_plan(V2_SPEC)
+    development_v3 = build_dataset_plan(GENERALIZATION_V3_SPEC)
+    test_v3 = build_dataset_plan(TEST_V3_SPEC)
+
+    assert test_v3.groupby("split").size().to_dict() == {"test": 600}
+    assert test_v3["speaker_id"].nunique() == 30
+    assert test_v3["sample_id"].str.startswith("synv3_test_").all()
+    assert test_v3["reference_text"].str.contains("V3-").all()
+    for prior in (v1, v2, development_v3):
+        assert set(test_v3["sample_id"]).isdisjoint(set(prior["sample_id"]))
+        assert set(test_v3["speaker_id"]).isdisjoint(set(prior["speaker_id"]))
+        assert set(test_v3["reference_text"]).isdisjoint(set(prior["reference_text"]))
+        prior_acoustic = set(
+            prior[["tts_voice", "tts_rate", "tts_pitch"]].itertuples(
+                index=False, name=None
+            )
+        )
+        test_acoustic = set(
+            test_v3[["tts_voice", "tts_rate", "tts_pitch"]].itertuples(
+                index=False, name=None
+            )
+        )
+        assert test_acoustic.isdisjoint(prior_acoustic)
+
+    negative = test_v3["term_targets"].eq("")
+    term_occurrences = sum(
+        len(value.split("|")) for value in test_v3.loc[~negative, "term_targets"]
+    )
+    assert int(negative.sum()) == 100
+    assert term_occurrences == 1050
 
 
 def test_edge_tts_request_timeout_prevents_indefinite_hang(

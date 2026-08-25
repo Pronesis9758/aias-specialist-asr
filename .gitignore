@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .test_tmp/
 .test_tmp*/
+.pytest-report-final-*/
 .ruff_cache/
 .coverage
 htmlcov/

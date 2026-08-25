@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,7 @@ def validate_confirmatory_cohort(
     reference_manifest_path: str | Path,
     confirmatory_manifest_path: str | Path,
     *,
+    additional_reference_manifest_paths: Iterable[str | Path] = (),
     expected_samples: int = 600,
     minimum_speakers: int = 30,
     minimum_term_occurrences: int = 1000,
@@ -52,9 +54,20 @@ def validate_confirmatory_cohort(
 ) -> dict[str, Any]:
     reference_path = Path(reference_manifest_path).expanduser().resolve()
     confirmatory_path = Path(confirmatory_manifest_path).expanduser().resolve()
-    reference = _read_manifest(reference_path)
+    reference_paths = [reference_path]
+    for value in additional_reference_manifest_paths:
+        resolved = Path(value).expanduser().resolve()
+        if resolved not in reference_paths:
+            reference_paths.append(resolved)
+    if confirmatory_path in reference_paths:
+        raise ValueError("Confirmatory manifest cannot also be a reference manifest")
+    reference_frames = [_read_manifest(path) for path in reference_paths]
+    reference = pd.concat(reference_frames, ignore_index=True)
+    primary_reference = reference_frames[0]
     confirmatory = _read_manifest(confirmatory_path)
-    reference_test = reference.loc[reference["split"].str.lower().eq("test")].copy()
+    reference_test = primary_reference.loc[
+        primary_reference["split"].str.lower().eq("test")
+    ].copy()
 
     if len(confirmatory) != expected_samples:
         raise ValueError(
@@ -81,7 +94,8 @@ def validate_confirmatory_cohort(
     for label, overlap in overlap_checks.items():
         if overlap:
             raise ValueError(
-                f"Confirmatory cohort overlaps v1 by {label}: {sorted(overlap)[:3]}"
+                f"Confirmatory cohort overlaps reference manifests by {label}: "
+                f"{sorted(overlap)[:3]}"
             )
 
     audio_hash_overlap: set[str] = set()
@@ -92,7 +106,7 @@ def validate_confirmatory_cohort(
             raise ValueError("Confirmatory manifest requires a unique audio_sha256 per sample")
         audio_hash_overlap = reference_hashes & confirmatory_hashes
         if audio_hash_overlap:
-            raise ValueError("Confirmatory audio content overlaps v1")
+            raise ValueError("Confirmatory audio content overlaps reference manifests")
 
     acoustic_overlap: set[tuple[str, str, str]] = set()
     acoustic_columns = ["tts_voice", "tts_rate", "tts_pitch"]
@@ -107,7 +121,9 @@ def validate_confirmatory_cohort(
         )
         acoustic_overlap = reference_profiles & confirmatory_profiles
         if acoustic_overlap:
-            raise ValueError("Confirmatory acoustic speaker profiles overlap v1")
+            raise ValueError(
+                "Confirmatory acoustic speaker profiles overlap reference manifests"
+            )
 
     negative_samples = 0
     term_occurrences = 0
@@ -130,6 +146,8 @@ def validate_confirmatory_cohort(
 
     return {
         "reference_test_samples": int(len(reference_test)),
+        "reference_manifest_count": len(reference_paths),
+        "reference_sample_count": int(len(reference)),
         "confirmatory_test_samples": int(len(confirmatory)),
         "reference_speakers": int(reference["speaker_id"].nunique()),
         "confirmatory_speakers": confirmatory_speaker_count,
@@ -149,6 +167,11 @@ def _safe_cohort_id(value: str) -> str:
     if not cleaned:
         raise ValueError("cohort_id must contain at least one safe character")
     return cleaned
+
+
+def _cohort_metric_label(cohort_name: str) -> str:
+    version = re.search(r"(?:^|[-_])v(?P<version>\d+)(?:$|[-_])", cohort_name.lower())
+    return f"test_v{version.group('version')}" if version else cohort_name
 
 
 def _metric_row(
@@ -173,7 +196,15 @@ def _metric_row(
     }
 
 
-def _write_summary(path: Path, comparison: pd.DataFrame, audit: dict[str, Any]) -> None:
+def _write_summary(
+    path: Path,
+    comparison: pd.DataFrame,
+    audit: dict[str, Any],
+    *,
+    cohort_name: str,
+    cohort_role: str,
+    development_influence: bool,
+) -> None:
     rows = []
     for row in comparison.itertuples(index=False):
         rows.append(
@@ -182,10 +213,19 @@ def _write_summary(path: Path, comparison: pd.DataFrame, audit: dict[str, Any]) 
             f"{row.domain_term_f1:.2%} | {row.cer:.2%} | {row.wer:.2%} | "
             f"{'PASS' if row.quality_gate_pass else 'FAIL'} |"
         )
-    text = """# Speaker-held-out confirmatory Test
+    influence_note = (
+        "This cohort informed the later development-data design, so its new score is "
+        "reported as regression/recovery evidence rather than an unbiased held-out claim."
+        if development_influence
+        else (
+            "This cohort did not influence model, data, decoding, correction, "
+            "or threshold selection."
+        )
+    )
+    text = f"""# Frozen cohort evaluation - {cohort_name}
 
-The v1 model, LoRA adapter, decoding, correction, precision, and domain-term snapshot
-were frozen before v2 inference. No v2 result is used for model or threshold selection.
+Role: {cohort_role}. The model, LoRA adapter, decoding, correction, precision, and
+domain-term snapshot were frozen before inference. {influence_note}
 
 | Cohort | Samples | Speakers | Precision | Recall | F1 | CER | WER | Gate |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
@@ -196,6 +236,7 @@ were frozen before v2 inference. No v2 result is used for model or threshold sel
         f"- Speaker overlap: {audit['speaker_id_overlap']}\n"
         f"- Sentence overlap: {audit['reference_text_overlap']}\n"
         f"- Audio hash overlap: {audit['audio_hash_overlap']}\n"
+        f"- Reference manifests checked: {audit['reference_manifest_count']}\n"
         f"- Confirmatory negative samples: {audit['negative_samples']}\n"
         f"- Confirmatory manufacturing-term occurrences: {audit['term_occurrences']}\n"
     )
@@ -208,6 +249,9 @@ def run_confirmatory_evaluation(
     confirmatory_manifest_path: str | Path,
     *,
     cohort_id: str = "speaker-heldout-v2",
+    cohort_role: str = "confirmatory",
+    development_influence: bool = False,
+    additional_reference_manifest_paths: Iterable[str | Path] = (),
     expected_samples: int = 600,
     minimum_speakers: int = 30,
     minimum_term_occurrences: int = 1000,
@@ -218,6 +262,12 @@ def run_confirmatory_evaluation(
     base_path = Path(base_config_path).expanduser().resolve()
     cohort_manifest = Path(confirmatory_manifest_path).expanduser().resolve()
     cohort_name = _safe_cohort_id(cohort_id)
+    if cohort_role not in {"regression", "confirmatory"}:
+        raise ValueError("cohort_role must be regression or confirmatory")
+    additional_reference_paths = [
+        Path(value).expanduser().resolve()
+        for value in additional_reference_manifest_paths
+    ]
     reference_result = (
         Path(reference_result_path).expanduser().resolve()
         if reference_result_path
@@ -225,7 +275,7 @@ def run_confirmatory_evaluation(
     )
     if not reference_result.exists():
         raise FileNotFoundError(
-            "The immutable v1 final_test_result.json is required before confirmatory v2"
+            "The immutable v1 final_test_result.json is required before cohort evaluation"
         )
 
     output_dir = selected_path.parent / "confirmatory" / cohort_name
@@ -243,6 +293,7 @@ def run_confirmatory_evaluation(
     audit = validate_confirmatory_cohort(
         reference_manifest,
         cohort_manifest,
+        additional_reference_manifest_paths=additional_reference_paths,
         expected_samples=expected_samples,
         minimum_speakers=minimum_speakers,
         minimum_term_occurrences=minimum_term_occurrences,
@@ -256,12 +307,18 @@ def run_confirmatory_evaluation(
         "reference_manifest_sha256": sha256_file(reference_manifest),
         "reference_domain_terms_sha256": sha256_file(reference_terms),
         "confirmatory_manifest_sha256": sha256_file(cohort_manifest),
+        "additional_reference_manifest_sha256": {
+            str(path): sha256_file(path) for path in additional_reference_paths
+        },
         "expected_samples": expected_samples,
         "minimum_speakers": minimum_speakers,
         "minimum_term_occurrences": minimum_term_occurrences,
         "minimum_negative_samples": minimum_negative_samples,
         "frozen_after_v1": True,
         "v2_tuning_permitted": False,
+        "cohort_role": cohort_role,
+        "development_influence": development_influence,
+        "cohort_tuning_permitted": False,
     }
     if result_path.exists():
         if (
@@ -271,7 +328,10 @@ def run_confirmatory_evaluation(
             raise ValueError("Existing confirmatory result has a different protocol identity")
         cached = json.loads(result_path.read_text(encoding="utf-8"))
         cached["cache_reused"] = True
-        print("[confirmatory-test] immutable v2 result reused without inference", flush=True)
+        print(
+            f"[cohort-test] immutable {cohort_name} result reused without inference",
+            flush=True,
+        )
         return cached
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -297,7 +357,7 @@ def run_confirmatory_evaluation(
     raw["evaluation"] = {**raw.get("evaluation", {}), "split": "test"}
     raw["training"] = {
         "enabled": False,
-        "reason": "speaker-held-out confirmatory test with frozen v1 selection",
+        "reason": f"{cohort_role} cohort evaluation with frozen v1 selection",
     }
     raw["dataset"] = {
         **raw.get("dataset", {}),
@@ -317,21 +377,23 @@ def run_confirmatory_evaluation(
     run_result = run_pipeline(load_settings(config_path))
     confirmatory_predictions = run_result.run_dir / "predictions_corrected.csv"
     v1_frame = pd.read_csv(reference_predictions, dtype=str).fillna("")
-    v2_frame = pd.read_csv(confirmatory_predictions, dtype=str).fillna("")
+    cohort_frame = pd.read_csv(confirmatory_predictions, dtype=str).fillna("")
     terms = load_domain_terms(reference_terms)
     v1_metrics = evaluate_predictions(v1_frame, terms)
-    v2_metrics = evaluate_predictions(v2_frame, terms)
+    cohort_metrics = evaluate_predictions(cohort_frame, terms)
     combined_metrics = evaluate_predictions(
-        pd.concat([v1_frame, v2_frame], ignore_index=True), terms
+        pd.concat([v1_frame, cohort_frame], ignore_index=True), terms
     )
     v1_gate = evaluate_quality_targets(v1_metrics, settings.quality_targets)
-    v2_gate = evaluate_quality_targets(v2_metrics, settings.quality_targets)
+    cohort_gate = evaluate_quality_targets(cohort_metrics, settings.quality_targets)
     combined_gate = evaluate_quality_targets(combined_metrics, settings.quality_targets)
     reference_speakers = _read_manifest(reference_manifest)
     reference_speakers = reference_speakers.loc[
         reference_speakers["split"].str.lower().eq("test")
     ]
     confirmatory_speakers = _read_manifest(cohort_manifest)
+    cohort_label = _cohort_metric_label(cohort_name)
+    combined_label = f"combined_v1_{cohort_label.removeprefix('test_')}"
     comparison = pd.DataFrame(
         [
             _metric_row(
@@ -341,13 +403,13 @@ def run_confirmatory_evaluation(
                 reference_speakers["speaker_id"].nunique(),
             ),
             _metric_row(
-                "test_v2",
-                v2_metrics,
-                v2_gate,
+                cohort_label,
+                cohort_metrics,
+                cohort_gate,
                 confirmatory_speakers["speaker_id"].nunique(),
             ),
             _metric_row(
-                "combined_v1_v2",
+                combined_label,
                 combined_metrics,
                 combined_gate,
                 pd.concat(
@@ -356,10 +418,17 @@ def run_confirmatory_evaluation(
             ),
         ]
     )
-    comparison_path = output_dir / "v1_v2_comparison.csv"
+    comparison_path = output_dir / f"v1_{cohort_label.removeprefix('test_')}_comparison.csv"
     comparison.to_csv(comparison_path, index=False, encoding="utf-8-sig")
     summary_path = output_dir / "confirmatory_summary.md"
-    _write_summary(summary_path, comparison, audit)
+    _write_summary(
+        summary_path,
+        comparison,
+        audit,
+        cohort_name=cohort_name,
+        cohort_role=cohort_role,
+        development_influence=development_influence,
+    )
 
     summary = {
         "cohort_id": cohort_name,
@@ -376,15 +445,18 @@ def run_confirmatory_evaluation(
         "summary_path": str(summary_path),
         "metrics": {
             "test_v1": v1_metrics,
-            "test_v2": v2_metrics,
-            "combined_v1_v2": combined_metrics,
+            cohort_label: cohort_metrics,
+            combined_label: combined_metrics,
         },
         "quality_gates": {
             "test_v1": v1_gate,
-            "test_v2": v2_gate,
-            "combined_v1_v2": combined_gate,
+            cohort_label: cohort_gate,
+            combined_label: combined_gate,
         },
         "selection_frozen": True,
+        "cohort_role": cohort_role,
+        "development_influence": development_influence,
+        "cohort_result_used_for_tuning": False,
         "v2_result_used_for_tuning": False,
         "human_review_required": True,
     }

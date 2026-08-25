@@ -1,0 +1,46 @@
+synthetic_dataset:
+  id: synthetic-manufacturing-korean-asr-independent-heldout-test-v3
+  dataset_role: confirmatory_test
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/synthetic/manufacturing_test_v3
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  seed: 20260827
+  sample_id_prefix: synv3
+  speaker_id_prefix: synthetic_v3
+  confirmatory_code: V3
+  sentence_template_version: v2
+  request_timeout_seconds: 30
+  tts_retries: 6
+  tts_retry_base_seconds: 3
+  tts_retry_max_seconds: 60
+  progress_every: 10
+  split_counts:
+    train: 0
+    validation: 0
+    test: 600
+  target_duration_hours:
+    test: 1.0
+  speaker_profiles:
+    train: 0
+    validation: 0
+    test: 30
+  minimum_speaker_profiles: 30
+  minimum_test_term_occurrences: 1000
+  negative_test_samples: 100
+  minimum_negative_test_samples: 100
+  triple_term_test_samples: 50
+  voices:
+    - ko-KR-SunHiNeural
+    - ko-KR-InJoonNeural
+    - ko-KR-HyunsuMultilingualNeural
+  # v1, v2 및 일반화 개발 v3에서 쓰지 않은 속도·피치 쌍만 사용합니다.
+  prosody_profiles:
+    - {id: v3_p01, rate: "-22%", pitch: "-17Hz"}
+    - {id: v3_p02, rate: "-19%", pitch: "-15Hz"}
+    - {id: v3_p03, rate: "-14%", pitch: "-13Hz"}
+    - {id: v3_p04, rate: "-11%", pitch: "-9Hz"}
+    - {id: v3_p05, rate: "-7%", pitch: "-7Hz"}
+    - {id: v3_p06, rate: "-3%", pitch: "-3Hz"}
+    - {id: v3_p07, rate: "+5%", pitch: "+6Hz"}
+    - {id: v3_p08, rate: "+11%", pitch: "+11Hz"}
+    - {id: v3_p09, rate: "+17%", pitch: "+13Hz"}
+    - {id: v3_p10, rate: "+23%", pitch: "+15Hz"}

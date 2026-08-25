@@ -20,6 +20,7 @@ from .experiments import (
     select_experiment_member,
     train_selected_whisper_lora,
 )
+from .generalization import build_generalization_summary
 from .hf_data import prepare_hf_dataset
 from .lora_experiments import run_lora_learning_curve
 from .lora_merge import merge_selected_lora
@@ -359,6 +360,20 @@ def confirmatory_evaluation(
     config: Path = typer.Option(..., exists=True, dir_okay=False),
     manifest: Path = typer.Option(..., exists=True, dir_okay=False),
     cohort_id: str = typer.Option("speaker-heldout-v2"),
+    cohort_role: str = typer.Option(
+        "confirmatory", help="Evidence role: regression or confirmatory."
+    ),
+    development_influence: bool = typer.Option(
+        False,
+        help="Disclose that this cohort informed later development-data design.",
+    ),
+    additional_reference_manifest: list[Path] | None = typer.Option(
+        None,
+        "--additional-reference-manifest",
+        exists=True,
+        dir_okay=False,
+        help="Additional manifest that the cohort must not overlap; repeatable.",
+    ),
     expected_samples: int = typer.Option(600, min=1),
     minimum_speakers: int = typer.Option(30, min=1),
     minimum_term_occurrences: int = typer.Option(1000, min=0),
@@ -371,6 +386,9 @@ def confirmatory_evaluation(
         config,
         manifest,
         cohort_id=cohort_id,
+        cohort_role=cohort_role,
+        development_influence=development_influence,
+        additional_reference_manifest_paths=additional_reference_manifest or (),
         expected_samples=expected_samples,
         minimum_speakers=minimum_speakers,
         minimum_term_occurrences=minimum_term_occurrences,
@@ -391,6 +409,33 @@ def deployment_profiles(
     """Select accuracy-first and feasible on-device candidates without relaxing gates."""
     result = select_deployment_profiles(comparison, profiles, output_dir)
     typer.echo(f"Deployment selections: {result}")
+
+
+@app.command("generalization-summary")
+def generalization_summary(
+    v1_result: Path = typer.Option(..., exists=True, dir_okay=False),
+    v2_result: Path = typer.Option(..., exists=True, dir_okay=False),
+    v3_result: Path = typer.Option(..., exists=True, dir_okay=False),
+    config: Path = typer.Option(..., exists=True, dir_okay=False),
+    output_dir: Path = typer.Option(..., file_okay=False),
+    historical_v2_result: Path | None = typer.Option(
+        None, exists=True, dir_okay=False
+    ),
+    bootstrap_resamples: int = typer.Option(1000, min=100),
+    bootstrap_seed: int = typer.Option(20260827),
+) -> None:
+    """Aggregate frozen v1/v2/v3 results with speaker-profile confidence intervals."""
+    result = build_generalization_summary(
+        v1_result_path=v1_result,
+        v2_result_path=v2_result,
+        v3_result_path=v3_result,
+        config_path=config,
+        output_dir=output_dir,
+        historical_v2_result_path=historical_v2_result,
+        bootstrap_resamples=bootstrap_resamples,
+        bootstrap_seed=bootstrap_seed,
+    )
+    typer.echo(f"Generalization summary: {result}")
 
 
 @app.command("assessment-audit")
