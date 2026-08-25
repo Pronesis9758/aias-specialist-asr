@@ -48,3 +48,12 @@ def test_final_notebook_keeps_long_running_colab_cell_ids_stable() -> None:
     assert len(cell_ids) == 24
     assert len(set(cell_ids)) == len(cell_ids)
     assert cell_ids[13] == "f71d3408"
+
+
+def test_final_notebook_resolves_runtime_correction_base_config() -> None:
+    source = _source()
+
+    assert (
+        "correction_spec['correction_sweep']['base_config'] = "
+        "str(Path(GENERALIZATION_CONFIG).resolve())"
+    ) in source

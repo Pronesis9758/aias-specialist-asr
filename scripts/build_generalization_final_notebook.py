@@ -193,6 +193,7 @@ def build() -> Path:
             "if RUN_FINAL_GENERALIZATION:\n"
             "    correction_spec = yaml.safe_load(Path('configs/correction/synthetic_manufacturing_generalization_v3.yaml').read_text(encoding='utf-8'))\n"
             "    correction_spec['correction_sweep']['id'] = CORRECTION_ID\n"
+            "    correction_spec['correction_sweep']['base_config'] = str(Path(GENERALIZATION_CONFIG).resolve())\n"
             "    runtime_correction = Path('/content/aias_generalization_correction.yaml')\n"
             "    runtime_correction.write_text(yaml.safe_dump(correction_spec, allow_unicode=True, sort_keys=False), encoding='utf-8')\n"
             "    run_aias('correction-sweep', '--spec', str(runtime_correction), '--selection', str(DECODING_SELECTION))\n"
