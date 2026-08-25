@@ -30,3 +30,12 @@ def test_final_notebook_has_cost_gates_and_no_test_tuning_claim() -> None:
     assert "RUN_FINAL_GENERALIZATION = False" in source
     assert "Validation에서만 선택" in source
     assert "실제 작업자·공장" in source
+
+
+def test_final_notebook_refreshes_editable_install_for_running_colab_kernel() -> None:
+    source = _source()
+
+    assert "PROJECT_SRC = str(Path(PROJECT_DIR) / 'src')" in source
+    assert "sys.path.insert(0, PROJECT_SRC)" in source
+    assert "importlib.invalidate_caches()" in source
+    assert "import aias_specialist" in source
