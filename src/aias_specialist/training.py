@@ -127,6 +127,28 @@ def _required_training_splits(evaluation_split: str) -> set[str]:
     return required
 
 
+def _comparison_metadata_frame(
+    prepared: pd.DataFrame,
+    comparison_split: str,
+    duration_reader: Any,
+) -> pd.DataFrame:
+    """Build comparison metadata without reopening audio when duration is in the manifest."""
+    mask = prepared["split"].str.lower().eq(comparison_split)
+    frame = prepared.loc[mask, ["sample_id", "audio_path", "reference_text"]].copy()
+    if "audio_duration_seconds" in prepared.columns:
+        durations = pd.to_numeric(
+            prepared.loc[mask, "audio_duration_seconds"], errors="coerce"
+        ).reset_index(drop=True)
+        if durations.isna().any() or durations.le(0).any():
+            raise ValueError("audio_duration_seconds must contain positive numbers")
+        frame["audio_duration_seconds"] = durations.to_numpy()
+    else:
+        frame["audio_duration_seconds"] = [
+            float(duration_reader(path)) for path in frame["audio_path"]
+        ]
+    return frame
+
+
 def _model_load_kwargs(values: dict[str, Any], torch_module: Any) -> dict[str, Any]:
     """Build memory-conscious Transformers loading options for Colab GPU training.
 
@@ -398,12 +420,10 @@ def train_whisper_lora(settings: Settings) -> Path:
         ]
         # Validation learning-curve runs never open, decode, or featurize Test audio.
         # Test rows enter this in-memory dataset only for the one final comparison mode.
-        comparison_frame = comparison_source.copy()
-        comparison_frame["audio_duration_seconds"] = [
-            float(librosa.get_duration(path=path)) for path in comparison_frame["audio"]
-        ]
-        comparison_frame = comparison_frame.rename(
-            columns={"audio": "audio_path", "sentence": "reference_text"}
+        comparison_frame = _comparison_metadata_frame(
+            prepared,
+            comparison_split,
+            lambda path: librosa.get_duration(path=path),
         )
 
         def preprocess(record: dict[str, Any]) -> dict[str, Any]:

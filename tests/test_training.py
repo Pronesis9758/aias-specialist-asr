@@ -6,6 +6,7 @@ import pytest
 from aias_specialist.distillation import distillation_loss
 from aias_specialist.training import (
     _baseline_cache_identity,
+    _comparison_metadata_frame,
     _extract_input_features,
     _gradient_checkpointing_enabled,
     _lora_config_kwargs,
@@ -78,6 +79,32 @@ def test_validation_training_does_not_require_or_open_test_split() -> None:
 
     with pytest.raises(ValueError, match="evaluation_split"):
         _required_training_splits("development")
+
+
+def test_comparison_metadata_reuses_manifest_duration_without_opening_audio() -> None:
+    prepared = pd.DataFrame(
+        {
+            "sample_id": ["train-1", "valid-1"],
+            "audio_path": ["train.wav", "valid.wav"],
+            "reference_text": ["학습", "검증"],
+            "split": ["train", "validation"],
+            "audio_duration_seconds": [1.0, 2.5],
+        }
+    )
+
+    def unexpected_reader(path):  # noqa: ANN001, ANN202
+        raise AssertionError(f"duration reader must not open {path}")
+
+    result = _comparison_metadata_frame(prepared, "validation", unexpected_reader)
+
+    assert result.to_dict(orient="records") == [
+        {
+            "sample_id": "valid-1",
+            "audio_path": "valid.wav",
+            "reference_text": "검증",
+            "audio_duration_seconds": 2.5,
+        }
+    ]
 
 
 def test_whisper_lora_uses_low_memory_float16_loading_by_default() -> None:
