@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -55,9 +59,11 @@ def _require_a100(section: dict[str, Any]) -> None:
     print(f"[lora-curve] hardware={name}; memory={memory_gb:.1f} GB", flush=True)
 
 
-def _absolute_paths(raw: dict[str, Any], settings: Any) -> None:
+def _absolute_paths(
+    raw: dict[str, Any], settings: Any, manifest_override: Path | None = None
+) -> None:
     raw["paths"] = {
-        "manifest": str(settings.paths.manifest),
+        "manifest": str(manifest_override or settings.paths.manifest),
         "domain_terms": str(settings.paths.domain_terms),
         "artifacts_dir": str(settings.paths.artifacts_dir),
         "database": str(settings.paths.database),
@@ -72,9 +78,10 @@ def _write_run_config(
     model: dict[str, Any],
     stage: dict[str, Any],
     group_dir: Path,
+    manifest_override: Path | None = None,
 ) -> Path:
     raw = deepcopy(raw_base)
-    _absolute_paths(raw, settings)
+    _absolute_paths(raw, settings, manifest_override)
     training = raw.setdefault("training", {})
     training.update(
         {
@@ -118,6 +125,71 @@ def _write_run_config(
     return config_path
 
 
+def _stage_learning_curve_manifest(
+    section: dict[str, Any],
+    settings: Any,
+    stages: list[dict[str, Any]],
+) -> Path | None:
+    """Copy the active learning-curve subset to local SSD and return its manifest."""
+    staging = section.get("local_audio_staging", {})
+    if not isinstance(staging, dict) or not bool(staging.get("enabled", False)):
+        return None
+    cache_dir = Path(str(staging["cache_dir"])).expanduser().resolve()
+    workers = int(staging.get("copy_workers", 8))
+    if workers < 1:
+        raise ValueError("local_audio_staging.copy_workers must be at least 1")
+    manifest = pd.read_csv(settings.paths.manifest, dtype=str).fillna("")
+    max_train_samples = max(int(stage["train_samples"]) for stage in stages)
+    split = manifest["split"].str.lower()
+    staged = pd.concat(
+        [
+            manifest.loc[split.eq("train")].head(max_train_samples),
+            manifest.loc[split.eq("validation")],
+        ],
+        ignore_index=True,
+    )
+    if len(staged) == 0:
+        raise ValueError("Local audio staging selected no train or validation samples")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    jobs: list[tuple[Path, Path]] = []
+    cached_paths: list[str] = []
+    for row in staged.itertuples(index=False):
+        source = Path(str(row.audio_path)).expanduser()
+        if not source.is_absolute():
+            source = (settings.paths.manifest.parent / source).resolve()
+        digest = sha256(str(source).encode("utf-8")).hexdigest()[:16]
+        destination = cache_dir / "audio" / str(row.split).lower() / f"{digest}{source.suffix}"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        jobs.append((source, destination))
+        cached_paths.append(str(destination))
+
+    def copy_one(job: tuple[Path, Path]) -> None:
+        source, destination = job
+        if not source.is_file():
+            raise FileNotFoundError(f"Staging source is missing: {source}")
+        if destination.is_file() and destination.stat().st_size == source.stat().st_size:
+            return
+        partial = destination.with_suffix(destination.suffix + ".partial")
+        shutil.copyfile(source, partial)
+        os.replace(partial, destination)
+
+    print(
+        f"[lora-stage] copying/reusing {len(jobs)} files to {cache_dir}; workers={workers}",
+        flush=True,
+    )
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(copy_one, job) for job in jobs]
+        for completed, future in enumerate(as_completed(futures), start=1):
+            future.result()
+            if completed % 250 == 0 or completed == len(futures):
+                print(f"[lora-stage] completed={completed}/{len(futures)}", flush=True)
+    staged["audio_path"] = cached_paths
+    manifest_path = cache_dir / "manifest.csv"
+    staged.to_csv(manifest_path, index=False, encoding="utf-8-sig")
+    return manifest_path
+
+
 def _rank(frame: pd.DataFrame) -> pd.DataFrame:
     ranked = frame.copy()
     ranked["rank"] = pd.NA
@@ -157,6 +229,7 @@ def run_lora_learning_curve(
     if not isinstance(models, list) or not models or not isinstance(stages, list) or not stages:
         raise ValueError("LoRA learning curve requires non-empty models and stages")
     stages = _stages_through(stages, max_stage)
+    staged_manifest = _stage_learning_curve_manifest(section, settings, stages)
     resolve_model_revisions(
         settings.paths.model_lock,
         [
@@ -189,6 +262,7 @@ def run_lora_learning_curve(
                     model=model,
                     stage=stage,
                     group_dir=group_dir,
+                    manifest_override=staged_manifest,
                 )
                 print(
                     f"[lora-curve] stage={stage['id']} model={model['id']} starting",

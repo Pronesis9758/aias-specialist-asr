@@ -5,6 +5,11 @@ lora_learning_curve:
   require_a100: true
   minimum_gpu_memory_gb: 35
   evaluation_split: validation
+  # A100이 Drive I/O를 기다리지 않도록 현재 학습 단계의 음성을 로컬 SSD에 캐시합니다.
+  local_audio_staging:
+    enabled: true
+    cache_dir: /content/aias_lora_stage/generalization-v3
+    copy_workers: 16
   # v2는 실패 확인 세트로 동결하고 이 개발용 Validation에서만 모델과 학습량을 선택합니다.
   models:
     - id: turbo
