@@ -1,0 +1,29 @@
+quantization:
+  enabled: true
+  id: public-proxy-whisper-quantization-v1
+  name: 공개 Zeroth 프록시 선택 모델 양자화 비교
+  base_config: configs/public_proxy_assessment.yaml
+  evaluation_split: validation
+  isolated_process: true
+  continue_on_error: true
+  reference_variant: float16
+  model_cache_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/public_proxy/quantized
+  variants:
+    - id: float32
+      enabled: false
+      conversion_quantization: float32
+      device: cuda
+      compute_type: float32
+    - id: float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+    - id: int8-float16
+      conversion_quantization: int8_float16
+      device: cuda
+      compute_type: int8_float16
+    - id: cpu-int8
+      enabled: false
+      conversion_quantization: int8
+      device: cpu
+      compute_type: int8

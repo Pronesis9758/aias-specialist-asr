@@ -1,0 +1,164 @@
+{
+  "evidence_version": "2026-08-26",
+  "git_commit": "e241a70",
+  "quality_targets": {
+    "domain_term_recall_min": 0.85,
+    "cer_max": 0.07,
+    "wer_max": 0.15
+  },
+  "legacy_study": {
+    "purpose": "기존 7,200건 합성 데이터에서 모델·학습량·디코딩·양자화 파이프라인을 확립한 연구",
+    "dataset": {
+      "dataset_id": "local/synthetic-manufacturing-korean-asr-7200@generator-v1-20260823",
+      "train_samples": 6000,
+      "validation_samples": 600,
+      "test_samples": 600,
+      "speaker_profiles": 24,
+      "test_term_occurrences": 1230
+    },
+    "baseline_model_benchmark_validation_120": [
+      {"model": "large-v3", "recall": 0.7985611511, "cer": 0.0449121284, "wer": 0.1149425287, "p95_latency_s": 1.3031920446, "rtf": 0.1614067573, "size_bytes": 3090835702, "peak_gpu_mb": 3252.0},
+      {"model": "turbo", "recall": 0.7697841727, "cer": 0.0561944023, "wer": 0.1461412151, "p95_latency_s": 0.6826243748, "rtf": 0.0900623702, "size_bytes": 1621665983, "peak_gpu_mb": 1844.0},
+      {"model": "medium", "recall": 0.6510791367, "cer": 0.0969841614, "wer": 0.2545155993, "p95_latency_s": 0.8461502109, "rtf": 0.1063304582, "size_bytes": 1531642269, "peak_gpu_mb": 1748.0},
+      {"model": "small", "recall": 0.5467625899, "cer": 0.1323497505, "wer": 0.2824302135, "p95_latency_s": 0.5326973504, "rtf": 0.0631435747, "size_bytes": 487282906, "peak_gpu_mb": 724.0},
+      {"model": "base", "recall": 0.4028776978, "cer": 0.2045996962, "wer": 0.4376026273, "p95_latency_s": 0.4294600907, "rtf": 0.0470133276, "size_bytes": 148953475, "peak_gpu_mb": 340.0},
+      {"model": "tiny", "recall": 0.3093525180, "cer": 0.2835756129, "wer": 0.5394088670, "p95_latency_s": 0.6271858312, "rtf": 0.0506910507, "size_bytes": 79274153, "peak_gpu_mb": 276.0}
+    ],
+    "lora_learning_curve_validation_600": [
+      {"stage": "3h", "model": "turbo", "train_samples": 1800, "train_seconds": 425.03, "recall": 0.9528455285, "cer": 0.0043596282, "wer": 0.0107602339},
+      {"stage": "3h", "model": "large-v3", "train_samples": 1800, "train_seconds": 456.45, "recall": 0.9333333333, "cer": 0.0087466754, "wer": 0.0204678363},
+      {"stage": "3h", "model": "medium", "train_samples": 1800, "train_seconds": 690.53, "recall": 0.8682926829, "cer": 0.0350141208, "wer": 0.0812865497},
+      {"stage": "5h", "model": "large-v3", "train_samples": 3000, "train_seconds": 754.00, "recall": 0.9756097561, "cer": 0.0058128376, "wer": 0.0139181287},
+      {"stage": "5h", "model": "turbo", "train_samples": 3000, "train_seconds": 755.36, "recall": 0.9739837398, "cer": 0.0031806093, "wer": 0.0076023392},
+      {"stage": "5h", "model": "medium", "train_samples": 3000, "train_seconds": 495.69, "recall": 0.9560975610, "cer": 0.0143401607, "wer": 0.0329824561},
+      {"stage": "10h", "model": "turbo", "train_samples": 6000, "train_seconds": 1538.68, "recall": 0.9902439024, "cer": 0.0060596090, "wer": 0.0150877193},
+      {"stage": "10h", "model": "medium", "train_samples": 6000, "train_seconds": 940.87, "recall": 0.9902439024, "cer": 0.0084176469, "wer": 0.0256140351},
+      {"stage": "10h", "model": "large-v3", "train_samples": 6000, "train_seconds": 1514.36, "recall": 0.9821138211, "cer": 0.0059773519, "wer": 0.0145029240}
+    ],
+    "selected_lora_paired_validation_600": {
+      "model": "openai/whisper-large-v3-turbo",
+      "revision": "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+      "training_volume": "10h / 6000 samples / 750 steps",
+      "train_seconds": 1538.6788,
+      "base": {"recall": 0.3544715447, "cer": 0.1597981958, "wer": 0.6001169591},
+      "lora": {"recall": 0.9902439024, "cer": 0.0060596090, "wer": 0.0150877193}
+    },
+    "frozen_test_v1_original": {
+      "run_id": "20260823T215703161741Z",
+      "model": "openai/whisper-large-v3-turbo 10h LoRA",
+      "decode": "beam8-hotwords-vad300",
+      "correction": "no-correction",
+      "precision": "float16",
+      "domain_term_precision": 0.9991721854,
+      "domain_term_recall": 0.9813008130,
+      "domain_term_f1": 0.9901558655,
+      "cer": 0.0052049947,
+      "wer": 0.0108637195,
+      "quality_gate": "PASS"
+    }
+  },
+  "generalization_study": {
+    "purpose": "기존 Test v1을 유지한 채 신규 화자·문장·음향 프로필로 일반화 성능을 독립 검증",
+    "development_dataset": {
+      "manifest_samples": 10200,
+      "train_samples": 9000,
+      "validation_samples": 1200,
+      "acoustic_profiles": 96,
+      "integrity_gate": "PASS"
+    },
+    "independent_test_v3": {
+      "samples": 600,
+      "new_speaker_profiles": 30,
+      "manufacturing_term_occurrences": 1050,
+      "negative_samples": 100,
+      "cross_split_overlap": {"sentences": 0, "speakers": 0, "audio_hashes": 0, "acoustic_profiles": 0}
+    },
+    "pilot5h_validation_1200": [
+      {"model": "openai/whisper-large-v3-turbo", "display_name": "Whisper Turbo", "domain_term_precision": 0.9992, "domain_term_recall": 0.9561, "domain_term_f1": 0.9771, "cer": 0.0034, "wer": 0.0115},
+      {"model": "openai/whisper-large-v3", "display_name": "Whisper large-v3", "domain_term_precision": 0.9992, "domain_term_recall": 0.9699, "domain_term_f1": 0.9843, "cer": 0.0024, "wer": 0.0082}
+    ],
+    "selected_model": {
+      "model": "openai/whisper-large-v3",
+      "display_name": "Whisper large-v3",
+      "training_volume": "pilot-5h / 3000 samples",
+      "selection_basis": "동일 고정 Validation 1200건에서 정확도 우선"
+    },
+    "decoding_validation_1200": {
+      "selected": "beam8-hotwords-vad300",
+      "domain_term_recall": 0.986992,
+      "cer": 0.001878,
+      "wer": 0.006608,
+      "rtf": 0.164592,
+      "p95_latency_s": 1.030271,
+      "peak_gpu_mb": 3572.0
+    },
+    "correction_validation_1200": {
+      "selected": "no-correction",
+      "alias_only_changed": 0,
+      "ir_changed": 0,
+      "nn_changed": 0,
+      "hybrid_changed": 0,
+      "reason": "Validation에서 개선 표본이 없어 원문 보존"
+    },
+    "quantization_validation_1200": [
+      {"variant": "int8-float16", "wer": 0.007017544, "cer": 0.002069968, "domain_term_recall": 0.988617886, "mean_latency_s": 1.388908468, "p95_latency_s": 1.512715299, "rtf": 0.231484745, "model_size_bytes": 1556327687, "peak_ram_mb": 1404.20703125, "peak_gpu_mb": 2068.0},
+      {"variant": "float16", "wer": 0.006608187, "cer": 0.001878050, "domain_term_recall": 0.986991870, "mean_latency_s": 0.996910164, "p95_latency_s": 1.051324136, "rtf": 0.166151694, "model_size_bytes": 3092285747, "peak_ram_mb": 4937.3671875, "peak_gpu_mb": 3572.0}
+    ],
+    "frozen_configuration": {
+      "model": "openai/whisper-large-v3 pilot-5h LoRA",
+      "decoding": "beam8-hotwords-vad300",
+      "correction": "no-correction",
+      "quantization": "int8-float16",
+      "selection_data": "Validation 1200 only",
+      "test_policy": "동결 후 Test v1/v2/v3 각각 1회 평가; 결과를 본 뒤 재조정 금지"
+    },
+    "heldout_results": [
+      {"cohort": "test_v1", "role": "historical-regression", "samples": 600, "speakers": 4, "domain_term_precision": 0.992550, "domain_term_recall": 0.974797, "domain_term_f1": 0.983593, "cer": 0.006872, "wer": 0.016349, "tp": 1199, "fp": 9, "fn": 31, "quality_gate": "PASS"},
+      {"cohort": "test_v2", "role": "failure-informed-regression", "samples": 600, "speakers": 30, "domain_term_precision": 0.929000, "domain_term_recall": 0.864186, "domain_term_f1": 0.895422, "cer": 0.105603, "wer": 0.248638, "tp": 929, "fp": 71, "fn": 146, "quality_gate": "FAIL"},
+      {"cohort": "test_v3", "role": "independent-confirmatory", "samples": 600, "speakers": 30, "domain_term_precision": 0.867905, "domain_term_recall": 0.781599, "domain_term_f1": 0.822494, "cer": 0.250224, "wer": 0.509177, "tp": 841, "fp": 128, "fn": 235, "quality_gate": "FAIL"},
+      {"cohort": "combined_v1_v2_v3", "role": "micro-aggregate", "samples": 1800, "speakers": 64, "domain_term_precision": 0.934529, "domain_term_recall": 0.878143, "domain_term_f1": 0.905459, "cer": 0.133361, "wer": 0.291341, "tp": 2969, "fp": 208, "fn": 412, "quality_gate": "FAIL"}
+    ],
+    "bootstrap_95_ci": [
+      {"cohort": "test_v1", "metric": "precision", "estimate": 0.992550, "low": 0.984034, "high": 0.996779},
+      {"cohort": "test_v1", "metric": "recall", "estimate": 0.974797, "low": 0.960461, "high": 0.988764},
+      {"cohort": "test_v1", "metric": "f1", "estimate": 0.983593, "low": 0.972995, "high": 0.992748},
+      {"cohort": "test_v1", "metric": "cer", "estimate": 0.006872, "low": 0.002872, "high": 0.011864},
+      {"cohort": "test_v1", "metric": "wer", "estimate": 0.016349, "low": 0.007801, "high": 0.028525},
+      {"cohort": "test_v2", "metric": "precision", "estimate": 0.929000, "low": 0.915219, "high": 0.941356},
+      {"cohort": "test_v2", "metric": "recall", "estimate": 0.864186, "low": 0.837555, "high": 0.888167},
+      {"cohort": "test_v2", "metric": "f1", "estimate": 0.895422, "low": 0.876267, "high": 0.912752},
+      {"cohort": "test_v2", "metric": "cer", "estimate": 0.105603, "low": 0.089474, "high": 0.123042},
+      {"cohort": "test_v2", "metric": "wer", "estimate": 0.248638, "low": 0.222239, "high": 0.277484},
+      {"cohort": "test_v3", "metric": "precision", "estimate": 0.867905, "low": 0.831572, "high": 0.902635},
+      {"cohort": "test_v3", "metric": "recall", "estimate": 0.781599, "low": 0.748608, "high": 0.812899},
+      {"cohort": "test_v3", "metric": "f1", "estimate": 0.822494, "low": 0.789443, "high": 0.853282},
+      {"cohort": "test_v3", "metric": "cer", "estimate": 0.250224, "low": 0.235341, "high": 0.265434},
+      {"cohort": "test_v3", "metric": "wer", "estimate": 0.509177, "low": 0.489325, "high": 0.529458},
+      {"cohort": "combined_v1_v2_v3", "metric": "precision", "estimate": 0.934529, "low": 0.904205, "high": 0.956142},
+      {"cohort": "combined_v1_v2_v3", "metric": "recall", "estimate": 0.878143, "low": 0.831528, "high": 0.911680},
+      {"cohort": "combined_v1_v2_v3", "metric": "f1", "estimate": 0.905459, "low": 0.867704, "high": 0.932985},
+      {"cohort": "combined_v1_v2_v3", "metric": "cer", "estimate": 0.133361, "low": 0.097225, "high": 0.173622},
+      {"cohort": "combined_v1_v2_v3", "metric": "wer", "estimate": 0.291341, "low": 0.217261, "high": 0.371985}
+    ],
+    "historical_v2_before_after": [
+      {"metric": "precision", "before": 0.978982, "after": 0.929000, "delta": -0.049982},
+      {"metric": "recall", "before": 0.823256, "after": 0.864186, "delta": 0.040930},
+      {"metric": "f1", "before": 0.894391, "after": 0.895422, "delta": 0.001031},
+      {"metric": "cer", "before": 0.173506, "after": 0.105603, "delta": -0.067903},
+      {"metric": "wer", "before": 0.366436, "after": 0.248638, "delta": -0.117798}
+    ],
+    "source_paths": {
+      "comparison": "/content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/generalization/final-large-v3-pilot5h/generalization_comparison.csv",
+      "confidence_intervals": "/content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/generalization/final-large-v3-pilot5h/generalization_confidence_intervals.csv",
+      "v2_before_after": "/content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/generalization/final-large-v3-pilot5h/test_v2_before_after.csv",
+      "quantization": "/content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/quantization/generalization-v3-quantization-lora-selection-20260825T144453Z/quantization_comparison.csv"
+    }
+  },
+  "protocol_notes": [
+    "모델·학습량·디코딩·후처리·양자화 선택은 Validation에서만 수행했다.",
+    "설정 동결 후 Test v1/v2/v3를 각각 한 번만 평가했고 Test 결과로 재조정하지 않았다.",
+    "신규 일반화 연구의 v3 실패는 숨기지 않고 다음 개발 사이클의 근거로 보존한다.",
+    "모든 성능은 합성 음성 근거이며 실제 작업자·공장 일반화를 입증하지 않는다.",
+    "생산 적용 전 승인된 실음성 shadow 평가와 사람 검토가 필요하다."
+  ]
+}

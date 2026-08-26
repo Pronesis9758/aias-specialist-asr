@@ -1,0 +1,63 @@
+project:
+  name: AI Specialist 일반화 모델 기존 Test v1 회귀평가
+  owner: Pronesis9758
+  seed: 43
+
+paths:
+  manifest: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/synthetic/manufacturing_7200/manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/runs
+  database: /content/drive/MyDrive/AI_Specialist_ASR_Project/backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+dataset:
+  repo_id: local/synthetic-manufacturing-korean-asr-7200-v1
+  revision: generator-v1-20260823
+  license: project-authored-synthetic-speech
+  train_samples: 6000
+  validation_samples: 600
+  test_samples: 600
+  human_voice_data: false
+
+# finalize-evaluation이 Validation에서 고정한 실제 모델 설정으로 이 항목을 교체합니다.
+model:
+  backend: fixture
+  repo_id: fixture/replaced-by-frozen-selection
+  revision: frozen-selection
+  # load_settings 단계의 필수 경로이며 실제 평가는 고정된 selection의 local_dir로 교체합니다.
+  local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/replaced-by-frozen-selection
+  language: ko
+  device: cuda
+  compute_type: float16
+
+evaluation:
+  split: test
+  warmup_samples: 3
+  timing_repetitions: 1
+
+quality_targets:
+  enabled: true
+  minimum_domain_term_recall: 0.85
+  maximum_cer: 0.07
+  maximum_wer: 0.15
+  priority: [domain_term_recall, cer, wer]
+
+correction:
+  enabled: false
+  alias_enabled: false
+  top_k: 1
+  max_ngram_tokens: 1
+
+training:
+  enabled: false
+  reason: frozen generalization model regression evaluation
+
+governance:
+  mode: standard
+
+assessment:
+  hardware_profile: configs/hardware/colab_gpu_validation.yaml
+
+report:
+  title: 신규 일반화 모델의 기존 Test v1 회귀평가
+  include_charts: true

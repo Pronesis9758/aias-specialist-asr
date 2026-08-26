@@ -1,0 +1,89 @@
+project:
+  name: AI Specialist 합성 제조 음성 화자 일반화 개선 v3
+  owner: Pronesis9758
+  seed: 43
+
+paths:
+  manifest: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/synthetic/manufacturing_generalization_v3/manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/runs
+  database: /content/drive/MyDrive/AI_Specialist_ASR_Project/backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+dataset:
+  repo_id: local/synthetic-manufacturing-korean-asr-generalization-v3
+  revision: generator-v3-20260826
+  license: project-authored-synthetic-speech
+  train_samples: 9000
+  validation_samples: 1200
+  test_samples: 0
+  human_voice_data: false
+
+model:
+  backend: faster_whisper
+  repo_id: openai/whisper-large-v3-turbo
+  revision: main
+  format: transformers
+  local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/generalization-v3/turbo/float16
+  conversion_quantization: float16
+  language: ko
+  device: cuda
+  compute_type: float16
+  beam_size: 8
+  initial_prompt: 제조 현장 작업 기록입니다. 설비명, 모델 코드, 공정명, 숫자와 단위를 정확히 전사합니다.
+  hotwords: 프레스 베어링 컨베이어 비전 검사기 설비 이상 PLC HMI CNC 선반 AGV AOI 검사기 용접 로봇 체결 토크 안전 센서 유압 압력 비상 정지 G1001 G1002 M401 K201 R801 R802 V702 1호기 2호기 3호기 4호기 5호기
+  vad_filter: true
+  vad_min_silence_duration_ms: 300
+
+evaluation:
+  split: validation
+  warmup_samples: 3
+  timing_repetitions: 1
+
+quality_targets:
+  enabled: true
+  minimum_domain_term_recall: 0.85
+  maximum_cer: 0.07
+  maximum_wer: 0.15
+  priority: [domain_term_recall, cer, wer]
+
+correction:
+  enabled: false
+  alias_enabled: false
+  top_k: 1
+  max_ngram_tokens: 1
+
+training:
+  enabled: true
+  repo_id: openai/whisper-large-v3-turbo
+  revision: main
+  method: lora
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/generalization-v3-lora
+  evaluation_split: validation
+  low_cpu_mem_usage: true
+  load_dtype: float16
+  train_batch_size: 4
+  eval_batch_size: 8
+  gradient_accumulation_steps: 2
+  preprocess_num_proc: 1
+  gradient_checkpointing: false
+  learning_rate: 0.00005
+  max_steps: 375
+  warmup_steps: 30
+  save_steps: 125
+  eval_steps: 125
+  logging_steps: 10
+  save_total_limit: 2
+  resume_from_checkpoint: false
+  evaluate_during_training: false
+  repeat_final_evaluation: false
+
+governance:
+  mode: standard
+
+assessment:
+  hardware_profile: configs/hardware/colab_gpu_validation.yaml
+
+report:
+  title: 합성 제조 음성 화자 일반화 개선 Validation 보고서
+  include_charts: true

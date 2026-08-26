@@ -1,0 +1,126 @@
+project:
+  name: AI Specialist 합성 제조 음성 ASR 기능 검증
+  owner: Pronesis9758
+  seed: 42
+
+paths:
+  manifest: data/sample/manufacturing_synthetic/manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/runs
+  database: /content/drive/MyDrive/AI_Specialist_ASR_Project/backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+dataset:
+  repo_id: local/synthetic-manufacturing-korean-asr
+  revision: generator-v3-standard-transcript-20260823
+  license: project-functional-fixture
+  train_samples: 360
+  validation_samples: 120
+  test_samples: 120
+
+model:
+  backend: faster_whisper
+  repo_id: Systran/faster-whisper-tiny
+  revision: main
+  local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/synthetic/baseline/faster-whisper-tiny
+  language: ko
+  device: cuda
+  compute_type: float16
+  beam_size: 5
+  initial_prompt: 제조 현장 작업 기록입니다. 설비명, 모델 코드, 공정명, 수치와 단위를 정확히 전사합니다.
+  hotwords: AOI 검사기 CNC 선반 체결 토크 공구 보정값 절삭유 유량 주축 회전수 가공 원점 비전 검사기 설비 이상
+
+evaluation:
+  split: test
+  warmup_samples: 1
+  timing_repetitions: 1
+
+# 현업 정확도 합격 기준입니다. 세 지표를 모두 만족해야 목표 통과로 판정합니다.
+quality_targets:
+  enabled: true
+  minimum_domain_term_recall: 0.85
+  maximum_cer: 0.07
+  maximum_wer: 0.15
+  priority:
+    - domain_term_recall
+    - cer
+    - wer
+
+correction:
+  enabled: true
+  case_sensitive: false
+  alias_enabled: true
+  top_k: 1
+  max_ngram_tokens: 1
+  require_consensus: true
+  min_score_margin: 0.10
+  max_length_ratio: 1.5
+  information_retrieval:
+    enabled: false
+    min_score: 0.80
+    weight: 0.5
+  nearest_neighbor:
+    enabled: false
+    backend: char_ngram
+    min_score: 0.85
+    weight: 0.5
+
+training:
+  enabled: true
+  # 정확도 1위 대형 추론 모델과 Colab에서 실제 학습할 소형 LoRA 후보를 분리한다.
+  follow_selected_model: false
+  model_id: small-colab-lora
+  repo_id: openai/whisper-small
+  revision: main
+  method: lora
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/synthetic-manufacturing-whisper-lora-v3
+  # large-v3 선택 시 표준 Colab T4의 12.7 GB 시스템 RAM과 15 GB VRAM 피크를
+  # 낮추도록 base weight를 단일 float16 사본으로 읽고 micro-batch를 1로 제한한다.
+  low_cpu_mem_usage: true
+  load_dtype: float16
+  train_batch_size: 1
+  eval_batch_size: 1
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: false
+  learning_rate: 0.0001
+  max_steps: 30
+  warmup_steps: 5
+  save_steps: 10
+  eval_steps: 10
+  logging_steps: 5
+  save_total_limit: 2
+  resume_from_checkpoint: auto
+
+distillation:
+  enabled: true
+  teacher_repo_id: openai/whisper-small
+  teacher_revision: main
+  student_repo_id: openai/whisper-tiny
+  student_revision: main
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/synthetic-manufacturing-whisper-distilled-v3
+  hard_label_weight: 0.5
+  temperature: 2.0
+  train_batch_size: 2
+  eval_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 0.00005
+  max_steps: 30
+  warmup_steps: 5
+  save_steps: 10
+  eval_steps: 10
+  logging_steps: 5
+  save_total_limit: 2
+  resume_from_checkpoint: auto
+
+governance:
+  mode: standard
+
+assessment:
+  model_matrix: configs/benchmarks/synthetic_manufacturing_whisper_models.yaml
+  benchmark_id: synthetic-manufacturing-whisper-model-benchmark-v6
+  quantization_id: synthetic-manufacturing-whisper-quantization-v6
+  hardware_profile: configs/hardware/colab_gpu_validation.yaml
+
+report:
+  title: 합성 제조 음성 ASR 기능 검증 보고서
+  include_charts: true

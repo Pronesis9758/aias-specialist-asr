@@ -1,0 +1,114 @@
+project:
+  name: AI Specialist 공개 프록시 ASR 전체동작 검증
+  owner: Pronesis9758
+  seed: 42
+
+paths:
+  manifest: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/public/zeroth_korean/manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/runs
+  database: /content/drive/MyDrive/AI_Specialist_ASR_Project/backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+dataset:
+  repo_id: kresnik/zeroth_korean
+  revision: 1fe937899f828af822293d05e086200946088bdf
+  subset: default
+  train_split: train
+  test_split: test
+  audio_column: audio
+  text_column: text
+  id_column: id
+  license: CC-BY-4.0
+  train_samples: 40
+  validation_samples: 8
+  test_samples: 16
+  shuffle_buffer_size: 1000
+
+model:
+  backend: faster_whisper
+  repo_id: Systran/faster-whisper-tiny
+  revision: main
+  local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/public_proxy/baseline/faster-whisper-tiny
+  language: ko
+  device: cuda
+  compute_type: float16
+  beam_size: 5
+
+evaluation:
+  split: test
+  warmup_samples: 1
+  timing_repetitions: 1
+
+correction:
+  enabled: true
+  case_sensitive: false
+  alias_enabled: true
+  top_k: 2
+  max_ngram_tokens: 3
+  information_retrieval:
+    enabled: true
+    min_score: 0.62
+    weight: 0.5
+  nearest_neighbor:
+    enabled: true
+    backend: char_ngram
+    min_score: 0.78
+    weight: 0.5
+
+training:
+  enabled: true
+  follow_selected_model: false
+  model_id: small-colab-lora
+  repo_id: openai/whisper-small
+  revision: main
+  method: lora
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/public-proxy-whisper-lora
+  low_cpu_mem_usage: true
+  load_dtype: float16
+  train_batch_size: 1
+  eval_batch_size: 1
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: false
+  learning_rate: 0.0001
+  max_steps: 30
+  warmup_steps: 5
+  save_steps: 10
+  eval_steps: 10
+  logging_steps: 5
+  save_total_limit: 2
+  resume_from_checkpoint: auto
+
+distillation:
+  enabled: true
+  teacher_repo_id: openai/whisper-small
+  teacher_revision: main
+  student_repo_id: openai/whisper-tiny
+  student_revision: main
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/public-proxy-whisper-distilled
+  hard_label_weight: 0.5
+  temperature: 2.0
+  train_batch_size: 2
+  eval_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 0.00005
+  max_steps: 30
+  warmup_steps: 5
+  save_steps: 10
+  eval_steps: 10
+  logging_steps: 5
+  save_total_limit: 2
+  resume_from_checkpoint: auto
+
+governance:
+  mode: standard
+
+assessment:
+  model_matrix: configs/benchmarks/public_proxy_whisper_models.yaml
+  benchmark_id: public-proxy-whisper-model-benchmark-v1
+  quantization_id: public-proxy-whisper-quantization-v1
+  hardware_profile: configs/hardware/colab_gpu_validation.yaml
+
+report:
+  title: 공개 Zeroth 프록시 ASR 전체동작 검증 보고서
+  include_charts: true

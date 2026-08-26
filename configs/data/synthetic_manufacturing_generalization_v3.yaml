@@ -1,0 +1,93 @@
+synthetic_dataset:
+  id: synthetic-manufacturing-korean-asr-generalization-development-v3
+  dataset_role: development
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/synthetic/manufacturing_generalization_v3
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  seed: 20260826
+  sample_id_prefix: syngen3
+  speaker_id_prefix: synthetic_gen3
+  request_timeout_seconds: 30
+  tts_retries: 6
+  tts_retry_base_seconds: 3
+  tts_retry_max_seconds: 60
+  progress_every: 10
+  split_counts:
+    train: 9000
+    validation: 1200
+    test: 0
+  target_duration_hours:
+    train: 15.0
+    validation: 2.0
+  # v2 확인 실패를 재평가하지 않고, 별도 개발용 화자·문장으로 일반화를 개선합니다.
+  speaker_profiles:
+    train: 72
+    validation: 24
+    test: 0
+  minimum_speaker_profiles: 96
+  profile_assignment: cartesian
+  require_unique_acoustic_profiles: true
+  minimum_train_occurrences_per_term: 180
+  maximum_train_occurrences_per_term: 300
+  priority_train_occurrences_per_term: 270
+  priority_terms:
+    - CNC 선반
+    - 1호기
+    - 2호기
+    - 3호기
+    - 4호기
+    - 5호기
+    - 프레스 3호기
+    - 용접 로봇
+    - PLC
+    - HMI
+    - AGV
+    - AOI 검사기
+    - X101
+    - G1001
+    - G1002
+    - M401
+    - K201
+    - R801
+    - R802
+    - V702
+  # edge-tts --list-voices로 Colab 실행 시점에 확인된 ko-KR 음성만 사용합니다.
+  # Azure Speech 전용 음성은 Edge TTS에서 NoAudioReceived가 발생하므로 포함하지 않습니다.
+  voices:
+    - ko-KR-SunHiNeural
+    - ko-KR-InJoonNeural
+    - ko-KR-HyunsuMultilingualNeural
+  # 3개 실제 지원 음성 x 32개 속도·피치 조합으로 중복 없는 96개 음향 프로필을 만듭니다.
+  # v2에서 취약했던 빠른 발화와 고·저음 조건이 train/validation에 모두 분산됩니다.
+  prosody_profiles:
+    - {id: p01_very_slow_deep, rate: "-24%", pitch: "-16Hz"}
+    - {id: p02_very_slow_low, rate: "-24%", pitch: "-8Hz"}
+    - {id: p03_very_slow_neutral, rate: "-24%", pitch: "+0Hz"}
+    - {id: p04_very_slow_bright, rate: "-24%", pitch: "+12Hz"}
+    - {id: p05_slow_deep, rate: "-16%", pitch: "-14Hz"}
+    - {id: p06_slow_low, rate: "-16%", pitch: "-6Hz"}
+    - {id: p07_slow_neutral, rate: "-16%", pitch: "+2Hz"}
+    - {id: p08_slow_bright, rate: "-16%", pitch: "+14Hz"}
+    - {id: p09_measured_deep, rate: "-8%", pitch: "-12Hz"}
+    - {id: p10_measured_low, rate: "-8%", pitch: "-4Hz"}
+    - {id: p11_measured_neutral, rate: "-8%", pitch: "+4Hz"}
+    - {id: p12_measured_bright, rate: "-8%", pitch: "+16Hz"}
+    - {id: p13_neutral_deep, rate: "+0%", pitch: "-16Hz"}
+    - {id: p14_neutral_low, rate: "+0%", pitch: "-6Hz"}
+    - {id: p15_neutral, rate: "+0%", pitch: "+0Hz"}
+    - {id: p16_neutral_bright, rate: "+0%", pitch: "+12Hz"}
+    - {id: p17_quick_deep, rate: "+8%", pitch: "-14Hz"}
+    - {id: p18_quick_low, rate: "+8%", pitch: "-4Hz"}
+    - {id: p19_quick_neutral, rate: "+8%", pitch: "+4Hz"}
+    - {id: p20_quick_bright, rate: "+8%", pitch: "+16Hz"}
+    - {id: p21_fast_deep, rate: "+16%", pitch: "-16Hz"}
+    - {id: p22_fast_low, rate: "+16%", pitch: "-8Hz"}
+    - {id: p23_fast_neutral, rate: "+16%", pitch: "+2Hz"}
+    - {id: p24_fast_bright, rate: "+16%", pitch: "+14Hz"}
+    - {id: p25_urgent_deep, rate: "+24%", pitch: "-14Hz"}
+    - {id: p26_urgent_low, rate: "+24%", pitch: "-6Hz"}
+    - {id: p27_urgent_neutral, rate: "+24%", pitch: "+4Hz"}
+    - {id: p28_urgent_bright, rate: "+24%", pitch: "+16Hz"}
+    - {id: p29_contrast_slow_high, rate: "-20%", pitch: "+18Hz"}
+    - {id: p30_contrast_slow_low, rate: "-12%", pitch: "-18Hz"}
+    - {id: p31_contrast_fast_high, rate: "+20%", pitch: "+18Hz"}
+    - {id: p32_contrast_fast_low, rate: "+20%", pitch: "-18Hz"}

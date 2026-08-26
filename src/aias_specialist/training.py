@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
 import time
 import traceback
@@ -11,7 +12,8 @@ import pandas as pd
 import yaml
 
 from .config import Settings
-from .correction import apply_term_correction
+from .correction import apply_term_correction, resolved_correction_options
+from .correction_audit import write_correction_audit
 from .data import load_domain_terms, prepare_manifest
 from .environment import collect_environment
 from .evaluation import compare_metrics, evaluate_predictions, per_sample_metrics
@@ -25,6 +27,7 @@ from .utils import git_sha, new_run_id, utc_now, write_json
 class SpeechSeq2SeqCollator:
     processor: Any
     decoder_start_token_id: int
+    input_features_dtype: Any | None = None
 
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, Any]:
         feature_batch = [
@@ -35,6 +38,12 @@ class SpeechSeq2SeqCollator:
             for feature in features
         ]
         batch = self.processor.feature_extractor.pad(feature_batch, return_tensors="pt")
+        # Whisper's first convolution requires its input features and parameters to
+        # share a dtype.  A low-memory float16 model load does not automatically cast
+        # the float32 log-Mel features on every Transformers/Accelerate combination
+        # used by Colab, so make that contract explicit before Trainer moves the batch
+        # to the GPU.
+        batch = _match_input_features_dtype(batch, self.input_features_dtype)
         label_batch = self.processor.tokenizer.pad(
             [{"input_ids": feature["labels"]} for feature in features],
             return_tensors="pt",
@@ -44,6 +53,15 @@ class SpeechSeq2SeqCollator:
             labels = labels[:, 1:]
         batch["labels"] = labels
         return batch
+
+
+def _match_input_features_dtype(
+    batch: dict[str, Any], input_features_dtype: Any | None
+) -> dict[str, Any]:
+    """Cast Whisper log-Mel features to the loaded model's parameter dtype."""
+    if input_features_dtype is not None:
+        batch["input_features"] = batch["input_features"].to(dtype=input_features_dtype)
+    return batch
 
 
 def _path(root: Path, value: str) -> Path:
@@ -90,6 +108,76 @@ def _gradient_checkpointing_enabled(values: dict[str, Any]) -> bool:
     return bool(values.get("gradient_checkpointing", False))
 
 
+def _preprocess_num_proc(values: dict[str, Any]) -> int:
+    """Return the number of CPU workers used for Whisper feature extraction."""
+    workers = int(values.get("preprocess_num_proc", 1))
+    if workers < 1:
+        raise ValueError("training.preprocess_num_proc must be at least 1")
+    return workers
+
+
+def _required_training_splits(evaluation_split: str) -> set[str]:
+    """Return only the manifest splits that the requested experiment may access."""
+    split = evaluation_split.strip().lower()
+    if split not in {"validation", "test"}:
+        raise ValueError("training.evaluation_split must be validation or test")
+    required = {"train", "validation"}
+    if split == "test":
+        required.add("test")
+    return required
+
+
+def _comparison_metadata_frame(
+    prepared: pd.DataFrame,
+    comparison_split: str,
+    duration_reader: Any,
+) -> pd.DataFrame:
+    """Build comparison metadata without reopening audio when duration is in the manifest."""
+    mask = prepared["split"].str.lower().eq(comparison_split)
+    frame = prepared.loc[mask, ["sample_id", "audio_path", "reference_text"]].copy()
+    if "audio_duration_seconds" in prepared.columns:
+        durations = pd.to_numeric(
+            prepared.loc[mask, "audio_duration_seconds"], errors="coerce"
+        ).reset_index(drop=True)
+        if durations.isna().any() or durations.le(0).any():
+            raise ValueError("audio_duration_seconds must contain positive numbers")
+        frame["audio_duration_seconds"] = durations.to_numpy()
+    else:
+        frame["audio_duration_seconds"] = [
+            float(duration_reader(path)) for path in frame["audio_path"]
+        ]
+    return frame
+
+
+def _model_load_kwargs(values: dict[str, Any], torch_module: Any) -> dict[str, Any]:
+    """Build memory-conscious Transformers loading options for Colab GPU training.
+
+    Loading a large Whisper checkpoint in float32 can temporarily consume more than the
+    standard Colab system-RAM allowance before the Trainer moves it to the GPU.  LoRA does
+    not need float32 base weights, so the default is a single-copy, low-memory float16 load.
+    The options remain explicit in the run snapshot and can be overridden for other hardware.
+    """
+    options: dict[str, Any] = {
+        "low_cpu_mem_usage": bool(values.get("low_cpu_mem_usage", True)),
+    }
+    dtype_name = str(values.get("load_dtype", "float16")).strip().lower()
+    dtype_map = {
+        "float16": torch_module.float16,
+        "fp16": torch_module.float16,
+        "bfloat16": torch_module.bfloat16,
+        "bf16": torch_module.bfloat16,
+        "float32": torch_module.float32,
+        "fp32": torch_module.float32,
+    }
+    if dtype_name == "auto":
+        return options
+    if dtype_name not in dtype_map:
+        supported = "auto, float16, bfloat16, float32"
+        raise ValueError(f"Unsupported training.load_dtype={dtype_name!r}; use one of: {supported}")
+    options["torch_dtype"] = dtype_map[dtype_name]
+    return options
+
+
 def _decode_prediction_text(prediction_output: Any, processor: Any) -> list[str]:
     prediction_ids = prediction_output.predictions
     if isinstance(prediction_ids, tuple):
@@ -132,6 +220,31 @@ def _prediction_frame(
     return per_sample_metrics(output)
 
 
+def _baseline_cache_identity(
+    repo_id: str,
+    revision: str,
+    split: str,
+    comparison_frame: pd.DataFrame,
+) -> dict[str, Any]:
+    """Describe the immutable model and ordered references behind a baseline cache."""
+    rows = "\n".join(
+        f"{sample_id}\t{reference_text}"
+        for sample_id, reference_text in zip(
+            comparison_frame["sample_id"].astype(str),
+            comparison_frame["reference_text"].astype(str),
+            strict=True,
+        )
+    )
+    return {
+        "schema_version": 1,
+        "repo_id": repo_id,
+        "resolved_revision": revision,
+        "evaluation_split": split,
+        "sample_count": len(comparison_frame),
+        "ordered_reference_sha256": hashlib.sha256(rows.encode("utf-8")).hexdigest(),
+    }
+
+
 def _evaluation_metrics(frame: pd.DataFrame, terms: pd.DataFrame) -> dict[str, Any]:
     metrics = evaluate_predictions(frame, terms)
     runtime_seconds = float(frame["latency_seconds"].sum())
@@ -155,6 +268,7 @@ def _write_training_summary(
     baseline = metrics["baseline"]
     lora = metrics["lora"]
     improvement = metrics["lora_improvement"]
+    evaluation_split = str(metrics["training"].get("evaluation_split", "test"))
     text = f"""# Training run summary: {run_id}
 
 - Project: {settings.project.name}
@@ -162,13 +276,14 @@ def _write_training_summary(
 - Model: {metrics["training"]["model_repo"]}@{metrics["training"]["model_revision"]}
 - Train samples: {metrics["training"]["train_samples"]}
 - Validation samples: {metrics["training"]["validation_samples"]}
-- Test samples: {baseline["sample_count"]}
-- Base Whisper test WER: {baseline["wer"]:.4f}
-- Best LoRA test WER: {lora["wer"]:.4f}
+- Comparison split: {evaluation_split}
+- Comparison samples: {baseline["sample_count"]}
+- Base Whisper {evaluation_split} WER: {baseline["wer"]:.4f}
+- Best LoRA {evaluation_split} WER: {lora["wer"]:.4f}
 - LoRA WER absolute reduction: {improvement["wer_absolute_reduction"]:.4f}
-- Base Whisper test CER: {baseline["cer"]:.4f}
-- Best LoRA test CER: {lora["cer"]:.4f}
-- Evidence confidence: low (small public general-Korean test split; single seed)
+- Base Whisper {evaluation_split} CER: {baseline["cer"]:.4f}
+- Best LoRA {evaluation_split} CER: {lora["cer"]:.4f}
+- Evidence scope: synthetic validation for tuning, or held-out test only after selection
 - Human review required: transcript labels, privacy approval, domain terms, model trade-offs,
   and final report conclusions
 """
@@ -240,11 +355,16 @@ def train_whisper_lora(settings: Settings) -> Path:
             settings.paths.manifest,
             run_dir / "prepared_manifest.csv",
             backend="faster_whisper",
+            governance=settings.governance,
         )
+        comparison_split = str(values.get("evaluation_split", "test")).strip().lower()
+        required_splits = _required_training_splits(comparison_split)
         splits = set(prepared["split"].str.lower())
-        if not {"train", "validation", "test"}.issubset(splits):
+        if not required_splits.issubset(splits):
+            missing = sorted(required_splits - splits)
             raise ValueError(
-                "Training manifest must contain train, validation, and test splits for comparison"
+                "Training manifest is missing split(s) required for "
+                f"{comparison_split} comparison: {', '.join(missing)}"
             )
         terms = load_domain_terms(settings.paths.domain_terms)
         terms.to_csv(run_dir / "domain_terms.snapshot.csv", index=False, encoding="utf-8-sig")
@@ -266,7 +386,11 @@ def train_whisper_lora(settings: Settings) -> Path:
             language=settings.model.language,
             task="transcribe",
         )
-        model = WhisperForConditionalGeneration.from_pretrained(repo_id, revision=revision)
+        model = WhisperForConditionalGeneration.from_pretrained(
+            repo_id,
+            revision=revision,
+            **_model_load_kwargs(values, torch),
+        )
         model.generation_config.language = settings.model.language
         model.generation_config.task = "transcribe"
         model.generation_config.forced_decoder_ids = None
@@ -277,16 +401,30 @@ def train_whisper_lora(settings: Settings) -> Path:
         model = get_peft_model(model, lora)
         model.print_trainable_parameters()
 
-        dataset_frame = prepared[
+        full_dataset_frame = prepared[
             ["sample_id", "audio_path", "reference_text", "split", "source", "consent_status"]
         ].rename(columns={"audio_path": "audio", "reference_text": "sentence"})
-        dataset_frame["audio_duration_seconds"] = [
-            float(librosa.get_duration(path=path)) for path in dataset_frame["audio"]
+        train_sample_limit = int(values.get("train_sample_limit", 0))
+        if train_sample_limit < 0:
+            raise ValueError("training.train_sample_limit must be zero or greater")
+        train_frame = full_dataset_frame.loc[
+            full_dataset_frame["split"].str.lower().eq("train")
         ]
-        test_frame = dataset_frame.loc[dataset_frame["split"].str.lower() == "test"].rename(
-            columns={"audio": "audio_path", "sentence": "reference_text"}
+        if train_sample_limit:
+            train_frame = train_frame.head(train_sample_limit)
+        validation_frame = full_dataset_frame.loc[
+            full_dataset_frame["split"].str.lower().eq("validation")
+        ]
+        comparison_source = full_dataset_frame.loc[
+            full_dataset_frame["split"].str.lower().eq(comparison_split)
+        ]
+        # Validation learning-curve runs never open, decode, or featurize Test audio.
+        # Test rows enter this in-memory dataset only for the one final comparison mode.
+        comparison_frame = _comparison_metadata_frame(
+            prepared,
+            comparison_split,
+            lambda path: librosa.get_duration(path=path),
         )
-        dataset = Dataset.from_pandas(dataset_frame, preserve_index=False)
 
         def preprocess(record: dict[str, Any]) -> dict[str, Any]:
             audio, sampling_rate = librosa.load(record["audio"], sr=16_000, mono=True)
@@ -294,20 +432,50 @@ def train_whisper_lora(settings: Settings) -> Path:
             record["labels"] = processor.tokenizer(record["sentence"]).input_ids
             return record
 
-        dataset = dataset.map(preprocess, remove_columns=["audio", "sentence"])
-        train_dataset = dataset.filter(lambda row: row["split"].lower() == "train").remove_columns(
-            ["split"]
-        )
-        eval_dataset = dataset.filter(
-            lambda row: row["split"].lower() == "validation"
-        ).remove_columns(["split"])
-        test_dataset = dataset.filter(lambda row: row["split"].lower() == "test").remove_columns(
-            ["split"]
+        preprocess_workers = _preprocess_num_proc(values)
+
+        def prepare_split(frame: pd.DataFrame, split_name: str) -> Any:
+            print(
+                f"[training] preprocessing split={split_name}; "
+                f"samples={len(frame)}; workers={preprocess_workers}",
+                flush=True,
+            )
+            split_dataset = Dataset.from_pandas(frame, preserve_index=False)
+            try:
+                return split_dataset.map(
+                    preprocess,
+                    remove_columns=["audio", "sentence", "split"],
+                    num_proc=preprocess_workers,
+                    desc=f"Whisper features ({split_name})",
+                )
+            except Exception:
+                if preprocess_workers == 1:
+                    raise
+                print(
+                    "[training] parallel preprocessing failed; retrying with one worker",
+                    flush=True,
+                )
+                return split_dataset.map(
+                    preprocess,
+                    remove_columns=["audio", "sentence", "split"],
+                    num_proc=1,
+                    desc=f"Whisper features ({split_name}, fallback)",
+                )
+
+        # Build each split independently so large log-Mel arrays are not copied by
+        # Dataset.filter three times. Validation runs also never construct a Test dataset.
+        train_dataset = prepare_split(train_frame, "train")
+        eval_dataset = prepare_split(validation_frame, "validation")
+        comparison_dataset = (
+            eval_dataset
+            if comparison_split == "validation"
+            else prepare_split(comparison_source, comparison_split)
         )
 
         collator = SpeechSeq2SeqCollator(
             processor=processor,
             decoder_start_token_id=model.config.decoder_start_token_id,
+            input_features_dtype=next(model.parameters()).dtype,
         )
 
         def compute_metrics(prediction: Any) -> dict[str, float]:
@@ -320,6 +488,8 @@ def train_whisper_lora(settings: Settings) -> Path:
             reference_text = processor.batch_decode(label_ids, skip_special_tokens=True)
             return {"wer": float(wer(reference_text, prediction_text))}
 
+        evaluate_during_training = bool(values.get("evaluate_during_training", True))
+        repeat_final_evaluation = bool(values.get("repeat_final_evaluation", True))
         argument_values: dict[str, Any] = {
             "output_dir": str(output_dir),
             "per_device_train_batch_size": int(values.get("train_batch_size", 4)),
@@ -336,7 +506,7 @@ def train_whisper_lora(settings: Settings) -> Path:
             "eval_steps": int(values.get("eval_steps", 50)),
             "logging_steps": int(values.get("logging_steps", 10)),
             "save_total_limit": int(values.get("save_total_limit", 3)),
-            "load_best_model_at_end": True,
+            "load_best_model_at_end": evaluate_during_training,
             "metric_for_best_model": "wer",
             "greater_is_better": False,
             "report_to": [],
@@ -349,8 +519,8 @@ def train_whisper_lora(settings: Settings) -> Path:
         evaluation_key = (
             "eval_strategy" if "eval_strategy" in signature.parameters else "evaluation_strategy"
         )
-        argument_values[evaluation_key] = "steps"
-        argument_values["save_strategy"] = "steps"
+        argument_values[evaluation_key] = "steps" if evaluate_during_training else "no"
+        argument_values["save_strategy"] = "steps" if evaluate_during_training else "no"
         arguments = Seq2SeqTrainingArguments(**argument_values)
 
         trainer_values: dict[str, Any] = {
@@ -374,7 +544,9 @@ def train_whisper_lora(settings: Settings) -> Path:
         resume = _checkpoint(output_dir, str(values.get("resume_from_checkpoint", "auto")))
         store.event(run_id, "training", "started", f"resume={resume or 'none'}")
         train_result = trainer.train(resume_from_checkpoint=resume)
-        eval_metrics = trainer.evaluate()
+        # Learning-curve selection uses the explicit Base/LoRA comparison below. On
+        # fixed-step A100 runs, another generated evaluation here duplicates that work.
+        eval_metrics = trainer.evaluate() if repeat_final_evaluation else {}
         store.event(
             run_id,
             "training",
@@ -388,27 +560,73 @@ def train_whisper_lora(settings: Settings) -> Path:
         trainer.model.eval()
         torch.cuda.empty_cache()
 
-        store.event(run_id, "test_comparison", "started", f"test_samples={len(test_dataset)}")
-        baseline_started = time.perf_counter()
-        with trainer.model.disable_adapter():
-            baseline_output = trainer.predict(test_dataset, metric_key_prefix="base_test")
-        baseline_runtime = time.perf_counter() - baseline_started
-        baseline_predictions = _prediction_frame(
-            test_frame,
-            _decode_prediction_text(baseline_output, processor),
-            baseline_runtime,
-            "base_whisper",
+        store.event(
+            run_id,
+            "heldout_comparison",
+            "started",
+            f"split={comparison_split}; samples={len(comparison_dataset)}",
         )
+        baseline_cache_value = values.get("baseline_predictions_cache")
+        baseline_cache = (
+            _path(settings.project_root, str(baseline_cache_value))
+            if baseline_cache_value
+            else None
+        )
+        cache_identity = _baseline_cache_identity(
+            repo_id,
+            revision,
+            comparison_split,
+            comparison_frame,
+        )
+        cache_metadata = (
+            baseline_cache.with_suffix(baseline_cache.suffix + ".metadata.json")
+            if baseline_cache is not None
+            else None
+        )
+        if baseline_cache is not None and baseline_cache.exists():
+            if cache_metadata is None or not cache_metadata.exists():
+                raise ValueError(f"Baseline cache metadata is missing: {baseline_cache}")
+            actual_identity = yaml.safe_load(cache_metadata.read_text(encoding="utf-8"))
+            if actual_identity != cache_identity:
+                raise ValueError(f"Baseline cache identity mismatch: {baseline_cache}")
+            baseline_predictions = pd.read_csv(baseline_cache)
+            expected_ids = comparison_frame["sample_id"].astype(str).tolist()
+            cached_ids = baseline_predictions["sample_id"].astype(str).tolist()
+            if cached_ids != expected_ids:
+                raise ValueError(f"Baseline cache sample order mismatch: {baseline_cache}")
+            print(f"[training] reused baseline predictions: {baseline_cache}", flush=True)
+        else:
+            baseline_started = time.perf_counter()
+            with trainer.model.disable_adapter():
+                baseline_output = trainer.predict(
+                    comparison_dataset, metric_key_prefix=f"base_{comparison_split}"
+                )
+            baseline_runtime = time.perf_counter() - baseline_started
+            baseline_predictions = _prediction_frame(
+                comparison_frame,
+                _decode_prediction_text(baseline_output, processor),
+                baseline_runtime,
+                "base_whisper",
+            )
+            if baseline_cache is not None:
+                baseline_cache.parent.mkdir(parents=True, exist_ok=True)
+                baseline_predictions.to_csv(
+                    baseline_cache, index=False, encoding="utf-8-sig"
+                )
+                if cache_metadata is not None:
+                    write_json(cache_metadata, cache_identity)
         baseline_predictions.to_csv(
             run_dir / "predictions_baseline.csv", index=False, encoding="utf-8-sig"
         )
         baseline_metrics = _evaluation_metrics(baseline_predictions, terms)
 
         lora_started = time.perf_counter()
-        lora_output = trainer.predict(test_dataset, metric_key_prefix="lora_test")
+        lora_output = trainer.predict(
+            comparison_dataset, metric_key_prefix=f"lora_{comparison_split}"
+        )
         lora_runtime = time.perf_counter() - lora_started
         lora_predictions = _prediction_frame(
-            test_frame,
+            comparison_frame,
             _decode_prediction_text(lora_output, processor),
             lora_runtime,
             "best_lora",
@@ -419,15 +637,15 @@ def train_whisper_lora(settings: Settings) -> Path:
         corrected_predictions = apply_term_correction(
             baseline_predictions,
             terms,
-            enabled=settings.correction.enabled,
-            case_sensitive=settings.correction.case_sensitive,
+            **resolved_correction_options(settings),
         )
         corrected_predictions = per_sample_metrics(corrected_predictions)
         corrected_predictions.to_csv(
             run_dir / "predictions_corrected.csv", index=False, encoding="utf-8-sig"
         )
+        write_correction_audit(run_dir, baseline_predictions, corrected_predictions)
         corrected_metrics = _evaluation_metrics(corrected_predictions, terms)
-        store.event(run_id, "test_comparison", "completed")
+        store.event(run_id, "heldout_comparison", "completed", f"split={comparison_split}")
 
         dataset_config = settings.raw.get("dataset", {})
         training_metrics = {
@@ -436,10 +654,12 @@ def train_whisper_lora(settings: Settings) -> Path:
             "adapter_dir": str(adapter_dir),
             "trainer_checkpoint_dir": str(output_dir),
             "best_checkpoint": trainer.state.best_model_checkpoint,
-            "best_validation_wer": float(eval_metrics.get("eval_wer", 0.0)),
+            "best_validation_wer": float(eval_metrics.get("eval_wer", lora_metrics["wer"])),
             "train_samples": len(train_dataset),
             "validation_samples": len(eval_dataset),
-            "test_samples": len(test_dataset),
+            "evaluation_split": comparison_split,
+            "evaluation_samples": len(comparison_dataset),
+            "test_samples": len(comparison_dataset) if comparison_split == "test" else 0,
             "max_steps": int(values.get("max_steps", 500)),
             "seed": settings.project.seed,
             **{f"train_{key}": value for key, value in train_result.metrics.items()},
@@ -455,9 +675,12 @@ def train_whisper_lora(settings: Settings) -> Path:
             "evidence": {
                 "dataset": f"{dataset_config.get('repo_id', 'unknown')}@"
                 f"{dataset_config.get('revision', 'unknown')}",
-                "comparison_population": "identical fixed test split",
-                "confidence": "low",
-                "reason": "small public general-Korean sample and one training seed",
+                "comparison_population": f"identical fixed {comparison_split} split",
+                "confidence": "synthetic_only",
+                "reason": (
+                    "Synthetic speech supports controlled model comparison but does not "
+                    "establish real-factory generalization."
+                ),
             },
         }
         write_json(run_dir / "metrics.json", metrics)

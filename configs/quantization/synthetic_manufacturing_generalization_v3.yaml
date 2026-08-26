@@ -1,0 +1,19 @@
+quantization:
+  enabled: true
+  id: synthetic-manufacturing-generalization-v3-quantization
+  name: 일반화 v3 선정 LoRA 모델 FP16·INT8 비교
+  base_config: configs/synthetic_manufacturing_generalization_v3.yaml
+  evaluation_split: validation
+  isolated_process: true
+  continue_on_error: false
+  reference_variant: float16
+  model_cache_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/generalization-v3/quantized
+  variants:
+    - id: float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+    - id: int8-float16
+      conversion_quantization: int8_float16
+      device: cuda
+      compute_type: int8_float16

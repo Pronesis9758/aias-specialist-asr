@@ -1,0 +1,128 @@
+project:
+  name: AI Specialist 제조 음성 ASR
+  owner: Pronesis9758
+  seed: 42
+
+paths:
+  manifest: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/private/manufacturing/manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/runs
+  database: /content/drive/MyDrive/AI_Specialist_ASR_Project/backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+model:
+  backend: faster_whisper
+  repo_id: Systran/faster-whisper-tiny
+  revision: main
+  local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/baseline/faster-whisper-tiny
+  language: ko
+  device: cuda
+  compute_type: float16
+  beam_size: 5
+  initial_prompt: 제조 현장 작업 기록입니다. 설비명, 모델 코드, 공정명, 수치와 단위를 정확히 전사합니다.
+  hotwords: AOI 검사기 CNC 선반 체결 토크 공구 보정값 절삭유 유량 주축 회전수 가공 원점 비전 검사기 설비 이상
+
+evaluation:
+  split: test
+  warmup_samples: 1
+  timing_repetitions: 3
+
+# 실제 제조 데이터의 최종 Test 결과에 적용할 현업 정확도 합격 기준입니다.
+quality_targets:
+  enabled: true
+  minimum_domain_term_recall: 0.85
+  maximum_cer: 0.07
+  maximum_wer: 0.15
+  priority:
+    - domain_term_recall
+    - cer
+    - wer
+
+correction:
+  enabled: true
+  case_sensitive: false
+  alias_enabled: true
+  top_k: 3
+  max_ngram_tokens: 4
+  information_retrieval:
+    enabled: true
+    min_score: 0.62
+    weight: 0.5
+  nearest_neighbor:
+    enabled: true
+    backend: char_ngram
+    min_score: 0.78
+    weight: 0.5
+
+training:
+  enabled: true
+  # 표준 Colab에서는 false로 두고, high-RAM GPU에서 선택 모델 자체를 학습할 때만 true로 바꾼다.
+  follow_selected_model: false
+  model_id: small-colab-lora
+  repo_id: openai/whisper-small
+  revision: main
+  method: lora
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/manufacturing-whisper-lora
+  low_cpu_mem_usage: true
+  load_dtype: float16
+  train_batch_size: 1
+  eval_batch_size: 1
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: false
+  learning_rate: 0.0001
+  max_steps: 500
+  warmup_steps: 50
+  save_steps: 50
+  eval_steps: 50
+  logging_steps: 10
+  save_total_limit: 3
+  resume_from_checkpoint: auto
+
+distillation:
+  enabled: true
+  teacher_repo_id: openai/whisper-small
+  teacher_revision: main
+  student_repo_id: openai/whisper-tiny
+  student_revision: main
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/manufacturing-whisper-distilled
+  hard_label_weight: 0.5
+  temperature: 2.0
+  train_batch_size: 2
+  eval_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 0.00005
+  max_steps: 100
+  warmup_steps: 10
+  save_steps: 25
+  eval_steps: 25
+  logging_steps: 5
+  save_total_limit: 2
+  resume_from_checkpoint: auto
+
+governance:
+  mode: strict_private
+  approval_file: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/private/manufacturing/data_approval.yaml
+  require_speaker_disjoint_splits: true
+  require_label_review: true
+  require_deidentified: true
+  require_external_processing_approval: true
+  required_manifest_columns:
+    - speaker_id
+    - scenario_id
+    - noise_condition
+    - approval_id
+    - deidentified
+    - label_reviewer
+    - label_review_status
+
+assessment:
+  model_matrix: configs/benchmarks/manufacturing_whisper_models_template.yaml
+  benchmark_id: manufacturing-whisper-model-benchmark-v1
+  quantization_id: manufacturing-whisper-quantization-v1
+  acceptance_criteria: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/private/manufacturing/acceptance_criteria.yaml
+  hardware_profile: configs/hardware/colab_gpu_validation.yaml
+  human_signoff: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/private/manufacturing/human_review_signoff.yaml
+
+report:
+  title: 제조 음성 ASR 모델 선정 및 최종평가 보고서
+  include_charts: true

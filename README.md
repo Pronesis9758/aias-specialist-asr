@@ -8,13 +8,99 @@ WER/CER/용어 정확도 평가, 실행 이력 누적, Word 보고서 생성을 
 
 - 입력 manifest 및 도메인 용어 사전 검증
 - 샘플 fixture 또는 Hugging Face `faster-whisper` 모델 기반 ASR 추론
-- 제조 용어 alias 보정
+- 제조 용어 alias·BM25 Information Retrieval·벡터 NN Search 선택형 보정
 - WER, CER, Domain Term Recall, Latency 측정
+- Whisper Tiny/Base/Small/Medium/Large-v3/Turbo Validation 비교
+- 선택 모델의 FP16·INT8-FP16 양자화 및 자원 사용량 비교
+- Teacher Whisper에서 경량 Student Whisper로 선택형 Knowledge Distillation
+- 사람의 모델·양자화 선택 기록 후 고정 Test 최종평가
 - 실행별 설정/환경/예측/지표/보고서 저장
 - SQLite 실험 레지스트리에 백데이터 누적
 - 로컬과 Google Colab에서 동일한 설정 파일 사용
+- 승인·비식별·전사 검수와 화자 독립 split을 강제하는 제조 데이터 모드
+- 네 가지 심사기준의 제출 증빙 누락을 자동 확인하는 준비도 감사
 
 Fine-tuning과 실제 현장 데이터 사용은 데이터·보안·GPU 확인 후 활성화합니다.
+
+## 실제 제조 데이터 전 준비
+
+실제 음성과 정답 전사가 없어도 다음 항목은 준비되어 있습니다.
+
+- Solution 후보 조사와 Whisper Baseline 선정 근거
+- strict private manifest·데이터 승인·사람 최종 검토 양식
+- 화자가 Train/Validation/Test에 중복되지 않는지 자동 검증
+- 모델 선택 결과를 받아 해당 모델을 LoRA 학습하는 명령
+- warm-up 제외 및 3회 반복 중앙값 기반 HW 성능 측정 설정
+- 모델 비교·LoRA·양자화·최종 Test·사람 승인의 증빙 완성도 자동 점검
+
+통합 실행 진입점은 `notebooks/colab_manufacturing_assessment.ipynb`입니다. 노트북의
+`DATA_MODE`에 따라 다음 설정을 사용합니다.
+
+- `PUBLIC_PROXY`: 고정 revision의 공개 `kresnik/zeroth_korean` 샘플로 데이터 준비,
+  3개 모델 비교, 자동 프록시 선택, LoRA, 양자화, 고정 Test, 보고서·SQLite 등록까지
+  전체 동작을 검증합니다.
+- `SYNTHETIC_MANUFACTURING`: 저장소에 포함된 한국어 TTS 제조 문장 600개와 정답 전사로
+  실제 데이터 투입 전 동일한 모델 비교·LoRA·양자화·보고서 경로를 검증합니다.
+- `PRIVATE_MANUFACTURING`: `configs/manufacturing_private_template.yaml`과 승인된 제조
+  녹음·검수 전사를 사용하며, 모델과 양자화 선택을 사람 검토로 강제합니다.
+
+공개·합성 모드의 자동 선택에는 `human_reviewed: false`와
+`selection_scope: automated_public_proxy`가 기록됩니다. 따라서 정상 동작 확인에는 쓸 수
+있지만 제조 성능이나 심사 최종 결론의 근거로는 인정하지 않습니다.
+
+노트북 상단의 `RUN_QUANTIZATION`, `ENABLE_INFORMATION_RETRIEVAL`,
+`ENABLE_NEAREST_NEIGHBOR`, `RUN_DISTILLATION` 값을 각각 변경하면 네 기능을 독립적으로
+실행할 수 있습니다. 지식 증류는 GPU 비용이 크므로 기본값은 `False`입니다. 세부 YAML
+옵션과 산출물은 `docs/OPTIONAL_MODELING_FEATURES.md`에 정리되어 있습니다.
+
+합성 제조 데이터는 다음 명령으로 Windows에서 재생성할 수 있습니다.
+
+```powershell
+uv run python scripts/generate_synthetic_manufacturing_dataset.py --overwrite
+```
+
+현재 제조 데이터 준비 상태를 확인하려면:
+
+```powershell
+uv run aias assessment-audit `
+  --config configs/manufacturing_private_template.yaml `
+  --output-dir reports/generated/assessment_readiness
+```
+
+음성이 준비되기 전에는 데이터·실험 항목이 `waiting`으로 표시되는 것이 정상입니다.
+
+## 모델·양자화 비교 Colab 실행
+
+`notebooks/colab_model_benchmark_quantization.ipynb`는 다음 순서로 실행됩니다.
+
+1. 공개 한국어 데이터의 Validation/Test 분리 확인
+2. 모든 Whisper 후보의 Hugging Face revision을 commit SHA로 고정
+3. 동일 Validation 데이터에서 FP16 모델 크기 비교
+4. 모델 담당자와 선택 이유 기록
+5. 선택 모델의 FP16·INT8-FP16 비교
+6. 양자화 담당자와 선택 이유 기록
+7. 선택된 모델·양자화 조합의 고정 Test 최종평가
+
+모델·양자화 후보는 각각 독립 `run_id`를 가지며, 비교 CSV·그래프·Word 보고서와
+SQLite 실험 그룹 관계가 Google Drive에 보존됩니다. Colab 연결이 끊긴 뒤 같은 실험 ID로
+다시 실행하면 완료된 후보는 건너뜁니다. 실험 설정이나 데이터가 바뀌면 YAML의 `id`를 새
+버전으로 변경해야 합니다.
+
+모델 다운로드·변환과 샘플별 추론 진행률은 셀 출력에 실시간 표시됩니다. 변환된
+CTranslate2 모델은 Drive의 `models/ct2/`에 계속 보존되어 다음 Colab 런타임에서
+재사용됩니다. 변환 전 Hugging Face 원본 모델까지 Drive에 보존하려면 노트북의
+`PERSIST_HF_SOURCE_CACHE=True`를 사용합니다. 이 옵션은 약 15GB 이상의 추가 공간을
+사용할 수 있으므로 기본값은 `False`입니다.
+
+로컬 fixture로 오케스트레이션만 확인하려면:
+
+```powershell
+& "$env:USERPROFILE\.local\bin\uv.exe" run aias benchmark-models `
+  --matrix configs/benchmarks/local_fixture.yaml
+```
+
+실제 Colab 모델 비교 설정은 `configs/benchmarks/whisper_models_colab.yaml`, 양자화 설정은
+`configs/quantization/whisper_quantization_colab.yaml`에 있습니다.
 
 ## 음성 파일 없이 Colab 데모 실행
 
@@ -90,7 +176,17 @@ aias model-lock --config ...        Hugging Face 모델 revision을 commit SHA�
 aias download-model --config ...    고정된 모델 파일 다운로드
 aias prepare-hf-dataset --config ... 공개 음성 샘플과 manifest 준비
 aias run --config ...               전체 파이프라인 실행
+aias model-matrix-lock --matrix ... 모델 행렬 전체 revision 고정
+aias benchmark-models --matrix ...  Validation 모델 비교
+aias select-model ...               사람의 모델 선택과 이유 기록
+aias train-selected-whisper ...     선택된 모델의 LoRA 학습과 Base/Test 비교
+aias train-whisper-distillation ... Teacher 지식을 경량 Student에 증류
+aias quantization-sweep ...         선택 모델의 양자화 비교
+aias select-quantization ...        사람의 양자화 선택과 이유 기록
+aias finalize-evaluation ...        고정 Test 최종평가
+aias confirmatory-evaluation ...   v1 설정을 고정한 신규 화자 Test v2 확인평가
 aias history                        누적 실행 이력 조회
+aias assessment-audit ...           심사기준별 제출 증빙 준비 상태 점검
 ```
 
 ## 디렉터리

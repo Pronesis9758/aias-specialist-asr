@@ -1,0 +1,29 @@
+deployment_selection:
+  id: synthetic-manufacturing-ondevice-v1
+  profiles:
+    - id: accuracy-first
+      minimum_domain_term_recall: 0.85
+      maximum_cer: 0.07
+      maximum_wer: 0.15
+      maximum_rtf: 1.0
+      maximum_model_size_mb: 7000
+      sort_by: accuracy
+    - id: edge-balanced
+      minimum_domain_term_recall: 0.85
+      maximum_cer: 0.07
+      maximum_wer: 0.15
+      maximum_rtf: 0.50
+      maximum_model_size_mb: 1800
+      sort_by: efficiency
+    - id: edge-compact
+      minimum_domain_term_recall: 0.80
+      maximum_cer: 0.10
+      maximum_wer: 0.20
+      maximum_rtf: 0.75
+      maximum_model_size_mb: 1000
+      sort_by: efficiency
+  optimization_policy:
+    quantization: required_comparison
+    distillation: optional_when_edge_balanced_has_no_feasible_candidate
+    pruning: diagnostic_only
+    pruning_reason: CTranslate2 dense kernels do not guarantee latency or size gains from zero-valued weights.

@@ -1,0 +1,14 @@
+acceptance_criteria:
+  problem_statement_owner: TO_BE_COMPLETED
+  approved_at: TO_BE_COMPLETED
+  minimum_train_samples: TO_BE_DECIDED
+  minimum_validation_samples: TO_BE_DECIDED
+  minimum_test_samples: TO_BE_DECIDED
+  maximum_cer: 0.07
+  maximum_wer: 0.15
+  minimum_domain_term_recall: 0.85
+  maximum_aggregate_rtf: TO_BE_DECIDED
+  maximum_p95_latency_seconds: TO_BE_DECIDED
+  selection_rule: 제조 용어 Recall 85% 이상을 최우선으로 하고 CER 7% 이하, WER 15% 이하를 모두 만족하는 후보 중 목표 환경의 지연시간과 메모리 제약을 만족하는 모델
+  notes:
+    - 실제 제조 업무 위험도와 사용자 요구를 기준으로 과제 수행자가 승인

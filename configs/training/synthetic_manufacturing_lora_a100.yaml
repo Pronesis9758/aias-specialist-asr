@@ -1,0 +1,41 @@
+lora_learning_curve:
+  id: synthetic-manufacturing-lora-a100-v3
+  name: Medium·Turbo·Large-v3 A100 LoRA 학습곡선
+  base_config: configs/synthetic_manufacturing_full_scale.yaml
+  require_a100: true
+  minimum_gpu_memory_gb: 35
+  evaluation_split: validation
+  models:
+    - id: medium
+      repo_id: openai/whisper-medium
+      revision: main
+    - id: turbo
+      repo_id: openai/whisper-large-v3-turbo
+      revision: main
+    - id: large-v3
+      repo_id: openai/whisper-large-v3
+      revision: main
+  # 동일한 micro-batch·누적·learning rate를 유지하고 데이터 노출량만 단계적으로 늘립니다.
+  stages:
+    - id: pilot-3h
+      train_samples: 1800
+      max_steps: 225
+      eval_steps: 225
+      save_steps: 225
+    - id: pilot-5h
+      train_samples: 3000
+      max_steps: 375
+      eval_steps: 375
+      save_steps: 375
+    - id: target-10h
+      train_samples: 6000
+      max_steps: 750
+      eval_steps: 750
+      save_steps: 750
+  selection:
+    primary_metric: domain_term_recall
+    tie_breakers:
+      - cer
+      - wer
+    minimum_recall_gain_between_stages: 0.005
+    test_policy: run_once_after_model_decoding_correction_and_quantization_selection

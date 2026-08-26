@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .test_tmp/
+.test_tmp*/
+.pytest-report-final-*/
 .ruff_cache/
 .coverage
 htmlcov/
@@ -21,6 +23,7 @@ artifacts/
 backdata/*.sqlite3
 backdata/*.sqlite3-*
 reports/generated/
+outputs/
 
 # Notebook and OS noise
 .ipynb_checkpoints/

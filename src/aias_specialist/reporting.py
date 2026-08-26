@@ -29,7 +29,13 @@ def create_metrics_chart(metrics: dict[str, Any], output_path: Path) -> Path:
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if "lora" in metrics:
-        return _create_lora_metrics_chart(metrics, output_path, Figure)
+        return _create_adaptation_metrics_chart(
+            metrics, output_path, Figure, "lora", "Best LoRA", "LoRA"
+        )
+    if "distilled" in metrics:
+        return _create_adaptation_metrics_chart(
+            metrics, output_path, Figure, "distilled", "Distilled Student", "Distillation"
+        )
     labels = ["WER", "CER"]
     baseline = [
         metrics["baseline"]["wer"],
@@ -61,11 +67,16 @@ def create_metrics_chart(metrics: dict[str, Any], output_path: Path) -> Path:
     return output_path
 
 
-def _create_lora_metrics_chart(
-    metrics: dict[str, Any], output_path: Path, figure_class: Any
+def _create_adaptation_metrics_chart(
+    metrics: dict[str, Any],
+    output_path: Path,
+    figure_class: Any,
+    variant_key: str,
+    variant_label: str,
+    method_label: str,
 ) -> Path:
     baseline = metrics["baseline"]
-    lora = metrics["lora"]
+    adapted = metrics[variant_key]
     fig = figure_class(figsize=(9, 4.2))
     accuracy_axis, speed_axis = fig.subplots(1, 2)
 
@@ -78,28 +89,28 @@ def _create_lora_metrics_chart(
         width,
         label="Base Whisper",
     )
-    lora_bars = accuracy_axis.bar(
+    adapted_bars = accuracy_axis.bar(
         [position + width / 2 for position in positions],
-        [lora["wer"], lora["cer"]],
+        [adapted["wer"], adapted["cer"]],
         width,
-        label="Best LoRA",
+        label=variant_label,
     )
     accuracy_axis.set_xticks(positions, labels)
     accuracy_axis.set_ylim(
         0,
-        max(1.0, baseline["wer"], baseline["cer"], lora["wer"], lora["cer"]) * 1.16,
+        max(1.0, baseline["wer"], baseline["cer"], adapted["wer"], adapted["cer"]) * 1.16,
     )
     accuracy_axis.set_ylabel("Error rate (lower is better)")
     accuracy_axis.set_title("Accuracy on identical test samples")
     accuracy_axis.grid(axis="y", alpha=0.25)
     accuracy_axis.legend()
     accuracy_axis.bar_label(baseline_bars, fmt="%.3f", padding=3, fontsize=8)
-    accuracy_axis.bar_label(lora_bars, fmt="%.3f", padding=3, fontsize=8)
+    accuracy_axis.bar_label(adapted_bars, fmt="%.3f", padding=3, fontsize=8)
 
-    speed_labels = ["Base Whisper", "Best LoRA"]
+    speed_labels = ["Base Whisper", variant_label]
     speed_values = [
         float(baseline.get("aggregate_real_time_factor", 0.0)),
-        float(lora.get("aggregate_real_time_factor", 0.0)),
+        float(adapted.get("aggregate_real_time_factor", 0.0)),
     ]
     speed_bars = speed_axis.bar(speed_labels, speed_values, color=["#4C78A8", "#F58518"])
     speed_axis.set_ylim(0, max(0.05, *speed_values) * 1.20)
@@ -109,7 +120,7 @@ def _create_lora_metrics_chart(
     speed_axis.bar_label(speed_bars, fmt="%.3f", padding=3, fontsize=8)
 
     sample_count = int(baseline.get("sample_count", 0))
-    fig.suptitle(f"Base Whisper vs. LoRA | fixed test split, n={sample_count}")
+    fig.suptitle(f"Base Whisper vs. {method_label} | fixed test split, n={sample_count}")
     fig.tight_layout()
     fig.savefig(output_path, dpi=180, bbox_inches="tight")
     return output_path
@@ -322,15 +333,20 @@ def _add_report_title(
     _add_metadata(document, "Model", f"{model_repo}@{model_revision}")
 
 
-def _add_lora_results_table(document: Document, metrics: dict[str, Any]) -> None:
+def _add_adaptation_results_table(
+    document: Document,
+    metrics: dict[str, Any],
+    variant_key: str,
+    variant_label: str,
+) -> None:
     baseline = metrics["baseline"]
-    lora = metrics["lora"]
+    adapted = metrics[variant_key]
     table = document.add_table(rows=1, cols=4)
     _set_table_geometry(table, [3000, 2000, 2000, 2360])
     _mark_header_row(table.rows[0])
     for cell, label in zip(
         table.rows[0].cells,
-        ["Metric", "Base Whisper", "Best LoRA", "LoRA - Base"],
+        ["Metric", "Base Whisper", variant_label, f"{variant_label} - Base"],
         strict=True,
     ):
         _shade_cell(cell, LIGHT_GRAY_HEX)
@@ -346,12 +362,12 @@ def _add_lora_results_table(document: Document, metrics: dict[str, Any]) -> None
     ]
     for label, key, percent in rows:
         baseline_value = float(baseline.get(key, 0.0))
-        lora_value = float(lora.get(key, 0.0))
-        delta = lora_value - baseline_value
+        adapted_value = float(adapted.get(key, 0.0))
+        delta = adapted_value - baseline_value
         row = table.add_row().cells
         row[0].text = label
         row[1].text = _format_metric(baseline_value, percent)
-        row[2].text = _format_metric(lora_value, percent)
+        row[2].text = _format_metric(adapted_value, percent)
         row[3].text = f"{delta:+.1%}p" if percent else f"{delta:+.3f}"
         for index, cell in enumerate(row):
             cell.paragraphs[0].alignment = (
@@ -377,11 +393,16 @@ def _build_lora_report(
     metrics: dict[str, Any],
     chart_path: Path | None,
 ) -> Path:
+    is_distillation = "distilled" in metrics
+    variant_key = "distilled" if is_distillation else "lora"
+    improvement_key = "distilled_improvement" if is_distillation else "lora_improvement"
+    variant_label = "Distilled Student" if is_distillation else "Best LoRA"
+    method_label = "knowledge distillation" if is_distillation else "LoRA"
     document, _ = _new_report_document()
     _add_report_title(
         document,
         title,
-        "고정 테스트셋 기반 Base Whisper·LoRA 비교 및 백데이터 기록",
+        f"고정 테스트셋 기반 Base Whisper·{variant_label} 비교 및 백데이터 기록",
         owner,
         run_id,
         backend,
@@ -390,8 +411,8 @@ def _build_lora_report(
     )
 
     baseline = metrics["baseline"]
-    lora = metrics["lora"]
-    reduction = float(metrics["lora_improvement"]["wer_absolute_reduction"])
+    adapted = metrics[variant_key]
+    reduction = float(metrics[improvement_key]["wer_absolute_reduction"])
     direction = "감소" if reduction >= 0 else "증가"
     confidence = str(metrics.get("evidence", {}).get("confidence", "low"))
 
@@ -403,14 +424,15 @@ def _build_lora_report(
     summary.paragraph_format.space_after = Pt(8)
     _shade_paragraph(summary, CALLOUT_HEX)
     summary.add_run(
-        f"동일한 테스트 {int(baseline['sample_count'])}개에서 best LoRA의 WER는 "
-        f"{baseline['wer']:.1%}에서 {lora['wer']:.1%}로 {abs(reduction):.1%}p {direction}했습니다. "
+        f"동일한 테스트 {int(baseline['sample_count'])}개에서 {variant_label}의 WER는 "
+        f"{baseline['wer']:.1%}에서 {adapted['wer']:.1%}로 "
+        f"{abs(reduction):.1%}p {direction}했습니다. "
         f"근거 신뢰도는 {confidence}이며, 공개 일반 한국어 소표본 결과이므로 제조 현장 성능으로 "
         "해석할 수 없습니다."
     )
 
     document.add_heading("2. Key Findings with Visual Evidence", level=1)
-    _add_lora_results_table(document, metrics)
+    _add_adaptation_results_table(document, metrics, variant_key, variant_label)
     if chart_path and chart_path.exists():
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.space_before = Pt(10)
@@ -421,9 +443,9 @@ def _build_lora_report(
         if properties:
             properties[0].set(
                 "descr",
-                "Grouped bars comparing base Whisper and best LoRA WER, CER, and aggregate speed",
+                f"Grouped bars comparing base Whisper and {variant_label} WER, CER, and speed",
             )
-            properties[0].set("title", "Base Whisper versus LoRA comparison")
+            properties[0].set("title", f"Base Whisper versus {variant_label} comparison")
     document.add_paragraph(
         "WER와 CER는 같은 모델 리비전, 같은 디코딩 설정, 같은 테스트 행 순서에서 계산했습니다. "
         "속도는 전체 배치 평가 시간을 전체 음성 길이로 나눈 aggregate RTF이므로 단일 요청 "
@@ -447,12 +469,20 @@ def _build_lora_report(
         document.add_paragraph(text, style="List Bullet")
 
     document.add_heading("4. Methodology", level=1)
-    document.add_paragraph(
-        "고정된 Hugging Face 모델 커밋에서 Whisper processor와 base model을 불러왔습니다. "
-        "LoRA는 q_proj·v_proj에 적용하고 validation WER가 가장 낮은 checkpoint를 자동 복원한 뒤 "
-        "adapter를 저장했습니다. PEFT adapter 비활성화 상태를 Base Whisper, 활성화 상태를 "
-        "Best LoRA로 두어 동일 test split을 연속 평가했습니다."
-    )
+    if is_distillation:
+        document.add_paragraph(
+            "고정된 Hugging Face 커밋에서 teacher와 student Whisper를 불러왔습니다. 정답 token의 "
+            "교차엔트로피와 temperature-scaled teacher KL divergence를 결합해 student를 학습하고, "
+            "학습 전후 student를 동일한 test split에서 비교했습니다."
+        )
+    else:
+        document.add_paragraph(
+            "고정된 Hugging Face 모델 커밋에서 Whisper processor와 base model을 불러왔습니다. "
+            "LoRA는 q_proj·v_proj에 적용하고 validation WER가 가장 낮은 checkpoint를 "
+            "자동 복원한 뒤 "
+            "adapter를 저장했습니다. PEFT adapter 비활성화 상태를 Base Whisper, 활성화 상태를 "
+            "Best LoRA로 두어 동일 test split을 연속 평가했습니다."
+        )
     document.add_paragraph(
         f"학습 설정: max_steps={int(training.get('max_steps', 0))}, "
         f"best validation WER={float(training.get('best_validation_wer', 0.0)):.3f}, "
@@ -484,7 +514,7 @@ def _build_lora_report(
     )
 
     document.core_properties.title = title
-    document.core_properties.subject = "AI Specialist Whisper LoRA evaluation report"
+    document.core_properties.subject = f"AI Specialist Whisper {method_label} evaluation report"
     document.core_properties.author = owner
     document.save(output_path)
     return output_path
@@ -502,7 +532,7 @@ def build_report(
     chart_path: Path | None,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    if "lora" in metrics:
+    if "lora" in metrics or "distilled" in metrics:
         return _build_lora_report(
             output_path,
             title,
@@ -563,7 +593,9 @@ def build_report(
     rows = [
         ("WER (lower is better)", "wer", -1),
         ("CER (lower is better)", "cer", -1),
+        ("Domain Term Precision", "domain_term_precision", 1),
         ("Domain Term Recall", "domain_term_recall", 1),
+        ("Domain Term F1-score", "domain_term_f1", 1),
         ("Mean Latency (seconds)", "mean_latency_seconds", 0),
         ("Mean Real-time Factor", "mean_real_time_factor", 0),
     ]
@@ -572,11 +604,21 @@ def build_report(
         corrected_value = float(metrics["corrected"][key])
         row = table.add_row().cells
         row[0].text = label
-        percent = key in {"wer", "cer", "domain_term_recall"}
+        percent = key in {
+            "wer",
+            "cer",
+            "domain_term_precision",
+            "domain_term_recall",
+            "domain_term_f1",
+        }
         delta = corrected_value - baseline_value
         applicable = not (
-            key == "domain_term_recall"
-            and not metrics["baseline"].get("domain_term_recall_applicable")
+            key in {"domain_term_precision", "domain_term_recall", "domain_term_f1"}
+            and not metrics["baseline"].get(
+                "domain_term_recall_applicable"
+                if key != "domain_term_precision"
+                else "domain_term_precision_applicable"
+            )
         )
         if applicable:
             row[1].text = _format_metric(baseline_value, percent)
@@ -616,7 +658,51 @@ def build_report(
             )
             document_properties[0].set("title", "ASR evaluation metric comparison")
 
-    document.add_heading("3. Interpretation and Limits", level=1)
+    quality_gate = metrics.get("quality_gate")
+    next_section = 3
+    if isinstance(quality_gate, dict) and quality_gate.get("enabled"):
+        document.add_heading("3. Manufacturing Quality Gate", level=1)
+        target_table = document.add_table(rows=1, cols=5)
+        target_table.style = "Table Grid"
+        target_headers = ["Priority", "Metric", "Target", "Observed", "Status"]
+        for cell, label in zip(target_table.rows[0].cells, target_headers, strict=True):
+            cell.text = label
+        target_rows = [
+            (
+                "1",
+                "Domain Term Recall",
+                f">= {float(quality_gate['targets']['minimum_domain_term_recall']):.1%}",
+                f"{float(quality_gate['observed']['domain_term_recall']):.1%}",
+                quality_gate["checks"]["domain_term_recall"]["passed"],
+            ),
+            (
+                "2",
+                "CER",
+                f"<= {float(quality_gate['targets']['maximum_cer']):.1%}",
+                f"{float(quality_gate['observed']['cer']):.1%}",
+                quality_gate["checks"]["cer"]["passed"],
+            ),
+            (
+                "3",
+                "WER",
+                f"<= {float(quality_gate['targets']['maximum_wer']):.1%}",
+                f"{float(quality_gate['observed']['wer']):.1%}",
+                quality_gate["checks"]["wer"]["passed"],
+            ),
+        ]
+        for values in target_rows:
+            row = target_table.add_row().cells
+            for cell, value in zip(row[:4], values[:-1], strict=True):
+                cell.text = str(value)
+            row[4].text = "PASS" if values[-1] else "FAIL"
+        overall_label = "PASS" if quality_gate["overall_pass"] else "FAIL"
+        document.add_paragraph(
+            f"Overall target status: {overall_label}. "
+            "세 지표를 모두 만족해야 현업 정확도 목표 통과 후보로 분류합니다."
+        )
+        next_section = 4
+
+    document.add_heading(f"{next_section}. Interpretation and Limits", level=1)
     if backend == "fixture":
         document.add_paragraph(
             "Fixture 실행은 자동화 구조와 계산 로직을 검증하기 위한 합성 결과입니다. "
@@ -635,7 +721,7 @@ def build_report(
         "평가해야 합니다."
     )
 
-    document.add_heading("4. Next Review Gate", level=1)
+    document.add_heading(f"{next_section + 1}. Next Review Gate", level=1)
     document.add_paragraph(
         "다음 단계는 실제 데이터의 사용 승인과 transcript 표본 검수를 완료한 뒤 동일 "
         "파이프라인으로 "

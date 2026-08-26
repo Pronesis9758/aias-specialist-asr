@@ -1,0 +1,19 @@
+quantization:
+  enabled: true
+  id: synthetic-manufacturing-whisper-quantization-v6
+  name: 합성 제조 음성 선택 모델 양자화 기능 비교
+  base_config: configs/synthetic_manufacturing_sample.yaml
+  evaluation_split: validation
+  isolated_process: true
+  continue_on_error: true
+  reference_variant: float16
+  model_cache_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/synthetic/quantized
+  variants:
+    - id: float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+    - id: int8-float16
+      conversion_quantization: int8_float16
+      device: cuda
+      compute_type: int8_float16

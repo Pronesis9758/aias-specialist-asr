@@ -1,0 +1,13 @@
+data_approval:
+  approval_id: TO_BE_COMPLETED
+  data_owner: TO_BE_COMPLETED
+  approver: TO_BE_COMPLETED
+  approved_at: TO_BE_COMPLETED
+  purpose: 제조 음성 ASR 모델 개발 및 평가
+  retention_until: TO_BE_COMPLETED
+  storage_location: TO_BE_COMPLETED
+  external_processing_allowed: false
+  deidentification_reviewed: false
+  prohibited_content_reviewed: false
+  deletion_owner: TO_BE_COMPLETED
+  notes: TO_BE_COMPLETED

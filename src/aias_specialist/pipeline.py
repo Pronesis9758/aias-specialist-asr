@@ -9,10 +9,12 @@ import yaml
 
 from .asr import run_inference
 from .config import Settings
-from .correction import apply_term_correction
+from .correction import apply_term_correction, resolved_correction_options
+from .correction_audit import write_correction_audit
 from .data import load_domain_terms, prepare_manifest
 from .environment import collect_environment
 from .evaluation import compare_metrics, evaluate_predictions, per_sample_metrics
+from .quality_targets import evaluate_quality_targets, quality_target_columns
 from .reporting import build_report, create_metrics_chart
 from .store import ExperimentStore, register_run_artifacts
 from .utils import git_sha, new_run_id, utc_now, write_json
@@ -37,17 +39,32 @@ def _write_summary(path: Path, settings: Settings, run_id: str, metrics: dict[st
     corrected_term_recall = (
         f"{corrected['domain_term_recall']:.4f}" if term_recall_applicable else "N/A"
     )
+    corrected_term_confusion = (
+        f"{corrected['domain_term_true_positive']}/"
+        f"{corrected['domain_term_false_positive']}/"
+        f"{corrected['domain_term_false_negative']}"
+    )
+    quality_gate = metrics["quality_gate"]
+    target_status = quality_gate["status"].upper()
     text = f"""# Run summary: {run_id}
 
 - Project: {settings.project.name}
 - Backend: {settings.model.backend}
 - Model: {settings.model.repo_id}
+- Evaluation split: {settings.evaluation.split}
 - Samples: {baseline["sample_count"]}
 - Baseline WER: {baseline["wer"]:.4f}
 - Corrected WER: {corrected["wer"]:.4f}
 - WER absolute reduction: {improvement["wer_absolute_reduction"]:.4f}
 - Baseline domain term recall: {baseline_term_recall}
 - Corrected domain term recall: {corrected_term_recall}
+- Corrected domain term precision: {corrected['domain_term_precision']:.4f}
+- Corrected domain term F1-score: {corrected['domain_term_f1']:.4f}
+- Corrected domain term TP/FP/FN: {corrected_term_confusion}
+- Manufacturing quality target status: {target_status}
+- Target domain term recall: >= {settings.quality_targets.minimum_domain_term_recall:.2%}
+- Target CER: <= {settings.quality_targets.maximum_cer:.2%}
+- Target WER: <= {settings.quality_targets.maximum_wer:.2%}
 - Human review required: transcript labels, privacy approval, domain-term substitutions,
   final model choice
 """
@@ -62,6 +79,10 @@ def run_pipeline(settings: Settings) -> RunResult:
     reports_dir.mkdir(parents=True, exist_ok=True)
     store = ExperimentStore(settings.paths.database)
     revision: str | None = None
+    print(
+        f"[pipeline] run={run_id} model={settings.model.repo_id} split={settings.evaluation.split}",
+        flush=True,
+    )
 
     store.start_run(
         {
@@ -85,26 +106,33 @@ def run_pipeline(settings: Settings) -> RunResult:
         store.event(run_id, "snapshot", "completed")
 
         store.event(run_id, "prepare", "started")
+        print("[pipeline] preparing manifest", flush=True)
         prepared = prepare_manifest(
             settings.paths.manifest,
             run_dir / "prepared_manifest.csv",
             settings.model.backend,
+            settings.governance,
         )
         terms = load_domain_terms(settings.paths.domain_terms)
         terms.to_csv(run_dir / "domain_terms.snapshot.csv", index=False, encoding="utf-8-sig")
         store.event(run_id, "prepare", "completed", f"samples={len(prepared)}")
 
-        evaluation_frame = prepared.loc[prepared["split"].str.lower() == "test"].copy()
+        evaluation_frame = prepared.loc[
+            prepared["split"].str.lower() == settings.evaluation.split
+        ].copy()
         if evaluation_frame.empty:
-            raise ValueError("Pipeline evaluation requires at least one test sample")
+            raise ValueError(
+                f"Pipeline evaluation requires at least one {settings.evaluation.split} sample"
+            )
         store.event(
             run_id,
             "evaluation_split",
             "completed",
-            f"test_samples={len(evaluation_frame)}",
+            f"split={settings.evaluation.split}; samples={len(evaluation_frame)}",
         )
 
         store.event(run_id, "baseline", "started")
+        print("[pipeline] running baseline inference", flush=True)
         baseline_predictions, revision = run_inference(evaluation_frame, settings)
         baseline_predictions = per_sample_metrics(baseline_predictions)
         baseline_predictions.to_csv(
@@ -112,32 +140,76 @@ def run_pipeline(settings: Settings) -> RunResult:
         )
         baseline_metrics = evaluate_predictions(baseline_predictions, terms)
         store.event(run_id, "baseline", "completed", f"revision={revision}")
+        if settings.paths.model_lock.exists():
+            (run_dir / "model-lock.snapshot.yaml").write_text(
+                settings.paths.model_lock.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
 
         store.event(run_id, "correction", "started")
+        print("[pipeline] applying domain-term correction", flush=True)
         corrected_predictions = apply_term_correction(
             baseline_predictions,
             terms,
-            enabled=settings.correction.enabled,
-            case_sensitive=settings.correction.case_sensitive,
+            **resolved_correction_options(settings),
         )
         corrected_predictions = per_sample_metrics(corrected_predictions)
         corrected_predictions.to_csv(
             run_dir / "predictions_corrected.csv", index=False, encoding="utf-8-sig"
         )
+        correction_audit = write_correction_audit(
+            run_dir,
+            baseline_predictions,
+            corrected_predictions,
+        )
         corrected_metrics = evaluate_predictions(corrected_predictions, terms)
-        store.event(run_id, "correction", "completed")
+        store.event(
+            run_id,
+            "correction",
+            "completed",
+            (
+                f"changed={int(correction_audit['text_changed'].sum())}; "
+                f"improved={int((correction_audit['outcome'] == 'improved').sum())}; "
+                f"degraded={int((correction_audit['outcome'] == 'degraded').sum())}"
+            ),
+        )
 
         metrics = {
             "baseline": baseline_metrics,
             "corrected": corrected_metrics,
             "improvement": compare_metrics(baseline_metrics, corrected_metrics),
+            "quality_gate": evaluate_quality_targets(
+                corrected_metrics,
+                settings.quality_targets,
+            ),
         }
         write_json(run_dir / "metrics.json", metrics)
+        write_json(run_dir / "quality_gate.json", metrics["quality_gate"])
+        write_json(
+            run_dir / "resource_metrics.json",
+            {
+                key: baseline_metrics[key]
+                for key in [
+                    "model_preparation_seconds",
+                    "model_size_bytes",
+                    "peak_process_memory_mb",
+                    "peak_gpu_memory_mb",
+                    "evaluation_runtime_seconds",
+                    "aggregate_real_time_factor",
+                ]
+            },
+        )
         store.add_metrics(run_id, "baseline", baseline_metrics)
         store.add_metrics(run_id, "corrected", corrected_metrics)
         store.add_metrics(run_id, "improvement", metrics["improvement"])
+        store.add_metrics(
+            run_id,
+            "quality_gate",
+            quality_target_columns(corrected_metrics, settings.quality_targets),
+        )
 
         store.event(run_id, "report", "started")
+        print("[pipeline] generating report", flush=True)
         chart_path = None
         if settings.report.include_charts:
             chart_path = create_metrics_chart(metrics, reports_dir / "metrics_comparison.png")
@@ -165,10 +237,12 @@ def run_pipeline(settings: Settings) -> RunResult:
 
         register_run_artifacts(store, run_id, run_dir)
         store.finish_run(run_id, "completed", model_revision=revision)
+        print(f"[pipeline] completed run={run_id} report={report_path}", flush=True)
         return RunResult(run_id=run_id, run_dir=run_dir, metrics=metrics, report_path=report_path)
     except Exception as exc:
         error_path = run_dir / "error.txt"
         error_path.write_text(traceback.format_exc(), encoding="utf-8")
         store.event(run_id, "pipeline", "failed", str(exc))
         store.finish_run(run_id, "failed", model_revision=revision, error=str(exc))
+        print(f"[pipeline] failed run={run_id}: {exc}", flush=True)
         raise

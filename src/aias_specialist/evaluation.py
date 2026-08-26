@@ -12,40 +12,82 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip().lower()
 
 
-def _term_recall(frame: pd.DataFrame, terms: pd.DataFrame) -> tuple[float, int, int]:
+def _term_metrics(frame: pd.DataFrame, terms: pd.DataFrame) -> dict[str, Any]:
     canonical_terms = [normalize_text(item) for item in terms["canonical"].astype(str)]
-    expected = 0
-    detected = 0
+    true_positive = 0
+    false_positive = 0
+    false_negative = 0
     for row in frame.itertuples(index=False):
         reference = normalize_text(row.reference_text)
         prediction = normalize_text(row.prediction_text)
         for term in canonical_terms:
-            if term and term in reference:
-                expected += 1
-                if term in prediction:
-                    detected += 1
-    recall = detected / expected if expected else 1.0
-    return recall, detected, expected
+            if not term:
+                continue
+            expected = term in reference
+            predicted = term in prediction
+            true_positive += int(expected and predicted)
+            false_positive += int(not expected and predicted)
+            false_negative += int(expected and not predicted)
+    predicted_count = true_positive + false_positive
+    expected_count = true_positive + false_negative
+    precision = true_positive / predicted_count if predicted_count else 1.0
+    recall = true_positive / expected_count if expected_count else 1.0
+    f1_score = (
+        2 * precision * recall / (precision + recall)
+        if precision + recall
+        else 0.0
+    )
+    return {
+        "domain_term_precision": float(precision),
+        "domain_term_precision_applicable": bool(predicted_count > 0),
+        "domain_term_recall": float(recall),
+        "domain_term_recall_applicable": bool(expected_count > 0),
+        "domain_term_f1": float(f1_score),
+        "domain_term_true_positive": int(true_positive),
+        "domain_term_false_positive": int(false_positive),
+        "domain_term_false_negative": int(false_negative),
+        "domain_terms_predicted": int(predicted_count),
+        "domain_terms_detected": int(true_positive),
+        "domain_terms_expected": int(expected_count),
+    }
+
+
+def _numeric_column(frame: pd.DataFrame, name: str, default: float = 0.0) -> pd.Series:
+    values = frame[name] if name in frame.columns else pd.Series(default, index=frame.index)
+    return pd.to_numeric(values, errors="coerce").fillna(default)
 
 
 def evaluate_predictions(frame: pd.DataFrame, terms: pd.DataFrame) -> dict[str, Any]:
     references = [normalize_text(item) for item in frame["reference_text"].astype(str)]
     predictions = [normalize_text(item) for item in frame["prediction_text"].astype(str)]
-    term_recall, detected_terms, expected_terms = _term_recall(frame, terms)
-    latencies = pd.to_numeric(frame.get("latency_seconds", 0.0), errors="coerce").fillna(0.0)
-    rtfs = pd.to_numeric(frame.get("real_time_factor", 0.0), errors="coerce").fillna(0.0)
+    term_metrics = _term_metrics(frame, terms)
+    latencies = _numeric_column(frame, "latency_seconds")
+    rtfs = _numeric_column(frame, "real_time_factor")
+    durations = _numeric_column(frame, "audio_duration_seconds")
+    model_sizes = _numeric_column(frame, "model_size_bytes")
+    process_memory = _numeric_column(frame, "process_rss_mb")
+    gpu_memory = _numeric_column(frame, "gpu_memory_mb")
+    preparation = _numeric_column(frame, "model_preparation_seconds")
+    total_duration = float(durations.sum())
+    total_latency = float(latencies.sum())
 
     return {
         "sample_count": int(len(frame)),
         "wer": float(wer(references, predictions)),
         "cer": float(cer(references, predictions)),
-        "domain_term_recall": float(term_recall),
-        "domain_term_recall_applicable": bool(expected_terms > 0),
-        "domain_terms_detected": int(detected_terms),
-        "domain_terms_expected": int(expected_terms),
+        **term_metrics,
         "mean_latency_seconds": float(latencies.mean()),
         "p95_latency_seconds": float(latencies.quantile(0.95)),
         "mean_real_time_factor": float(rtfs.mean()),
+        "aggregate_real_time_factor": (
+            total_latency / total_duration if total_duration > 0 else 0.0
+        ),
+        "audio_duration_seconds": total_duration,
+        "evaluation_runtime_seconds": total_latency,
+        "model_preparation_seconds": float(preparation.max()),
+        "model_size_bytes": int(model_sizes.max()),
+        "peak_process_memory_mb": float(process_memory.max()),
+        "peak_gpu_memory_mb": float(gpu_memory.max()),
     }
 
 

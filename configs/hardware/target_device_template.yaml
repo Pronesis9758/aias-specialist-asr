@@ -1,0 +1,18 @@
+deployment:
+  target_name: TO_BE_DECIDED
+  deployment_mode: on_device
+  on_device_claim: true
+  cpu: TO_BE_COMPLETED
+  gpu_or_accelerator: TO_BE_COMPLETED
+  ram_mb: TO_BE_COMPLETED
+  storage_mb: TO_BE_COMPLETED
+  operating_system: TO_BE_COMPLETED
+  max_model_size_mb: TO_BE_DECIDED
+  max_peak_memory_mb: TO_BE_DECIDED
+  max_aggregate_rtf: TO_BE_DECIDED
+  max_p95_latency_seconds: TO_BE_DECIDED
+  minimum_domain_term_recall: 0.85
+  maximum_cer: 0.07
+  maximum_wer: 0.15
+  warmup_samples: 1
+  timing_repetitions: 3

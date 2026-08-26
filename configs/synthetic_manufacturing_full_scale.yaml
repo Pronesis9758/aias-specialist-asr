@@ -1,0 +1,110 @@
+project:
+  name: AI Specialist 합성 제조 음성 현업 성능 개선
+  owner: Pronesis9758
+  seed: 42
+
+paths:
+  manifest: /content/drive/MyDrive/AI_Specialist_ASR_Project/data/synthetic/manufacturing_7200/manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/artifacts/runs
+  database: /content/drive/MyDrive/AI_Specialist_ASR_Project/backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+dataset:
+  repo_id: local/synthetic-manufacturing-korean-asr-7200
+  revision: generator-v1-20260823
+  license: project-authored-synthetic-speech
+  train_samples: 6000
+  validation_samples: 600
+  test_samples: 600
+  human_voice_data: false
+
+model:
+  backend: faster_whisper
+  repo_id: openai/whisper-medium
+  revision: main
+  format: transformers
+  local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/full-scale/medium/float16
+  conversion_quantization: float16
+  language: ko
+  device: cuda
+  compute_type: float16
+  beam_size: 5
+  initial_prompt: 제조 현장 작업 기록입니다. 설비명, 모델 코드, 공정명, 숫자와 단위를 정확히 전사합니다.
+  hotwords: 프레스 베어링 컨베이어 비전 검사기 설비 이상 PLC HMI CNC 선반 AGV AOI 검사기 용접 로봇 체결 토크 안전 센서 유압 압력 비상 정지
+
+evaluation:
+  # 모든 모델·학습량·디코딩·후처리 선택은 Validation에서만 수행합니다.
+  split: validation
+  warmup_samples: 3
+  timing_repetitions: 1
+
+quality_targets:
+  enabled: true
+  minimum_domain_term_recall: 0.85
+  maximum_cer: 0.07
+  maximum_wer: 0.15
+  priority:
+    - domain_term_recall
+    - cer
+    - wer
+
+correction:
+  enabled: true
+  case_sensitive: false
+  alias_enabled: true
+  top_k: 3
+  max_ngram_tokens: 2
+  require_consensus: false
+  min_score_margin: 0.08
+  max_length_ratio: 1.5
+  information_retrieval:
+    enabled: true
+    min_score: 0.75
+    weight: 0.5
+  nearest_neighbor:
+    enabled: true
+    backend: char_ngram
+    min_score: 0.82
+    weight: 0.5
+
+training:
+  enabled: true
+  repo_id: openai/whisper-medium
+  revision: main
+  method: lora
+  output_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/checkpoints/full-scale-lora
+  evaluation_split: validation
+  low_cpu_mem_usage: true
+  load_dtype: float16
+  # A100 80 GB에서 유효 배치 8은 유지하면서 micro-batch를 키워 GPU 활용률을 높입니다.
+  train_batch_size: 8
+  eval_batch_size: 16
+  gradient_accumulation_steps: 1
+  # 대용량 log-Mel 배열의 multiprocessing 교착을 피하고 split별 단일 worker로 처리합니다.
+  preprocess_num_proc: 1
+  gradient_checkpointing: false
+  learning_rate: 0.0001
+  max_steps: 225
+  warmup_steps: 20
+  save_steps: 75
+  eval_steps: 75
+  logging_steps: 10
+  save_total_limit: 2
+  resume_from_checkpoint: false
+  # 고정 step 학습곡선은 최종 Base/LoRA 비교가 전체 Validation을 수행하므로 중복 평가를 생략합니다.
+  evaluate_during_training: false
+  repeat_final_evaluation: false
+
+distillation:
+  enabled: false
+
+governance:
+  mode: standard
+
+assessment:
+  hardware_profile: configs/hardware/colab_gpu_validation.yaml
+
+report:
+  title: 합성 제조 음성 현업 목표 Validation 보고서
+  include_charts: true

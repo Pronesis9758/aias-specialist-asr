@@ -1,0 +1,36 @@
+project:
+  name: AI Specialist 제조 음성 ASR 벤치마크 Fixture
+  owner: Pronesis9758
+  seed: 42
+
+paths:
+  manifest: data/sample/benchmark_manifest.csv
+  domain_terms: data/domain_terms/manufacturing_terms.csv
+  artifacts_dir: artifacts/runs
+  database: backdata/experiments.sqlite3
+  model_lock: models/model-lock.yaml
+
+model:
+  backend: fixture
+  repo_id: fixture/whisper-tiny
+  revision: fixture
+  local_dir: models/fixture-whisper-tiny
+  language: ko
+  device: cpu
+  compute_type: int8
+  beam_size: 1
+
+evaluation:
+  split: validation
+
+correction:
+  enabled: true
+  case_sensitive: false
+
+training:
+  enabled: false
+  reason: 모델 행렬과 양자화 오케스트레이션 검증 전용
+
+report:
+  title: ASR 비교 자동화 Fixture 보고서
+  include_charts: true

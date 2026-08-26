@@ -1,13 +1,41 @@
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
+from aias_specialist.distillation import distillation_loss
 from aias_specialist.training import (
+    _baseline_cache_identity,
+    _comparison_metadata_frame,
     _extract_input_features,
     _gradient_checkpointing_enabled,
     _lora_config_kwargs,
+    _match_input_features_dtype,
+    _model_load_kwargs,
     _prediction_frame,
+    _preprocess_num_proc,
+    _required_training_splits,
 )
+
+
+def test_whisper_collator_matches_input_features_to_model_dtype() -> None:
+    class TensorStub:
+        def __init__(self) -> None:
+            self.requested_dtype = None
+
+        def to(self, *, dtype):  # noqa: ANN001, ANN202
+            self.requested_dtype = dtype
+            return self
+
+    features = TensorStub()
+    batch = {"input_features": features, "attention_mask": "unchanged"}
+
+    result = _match_input_features_dtype(batch, "float16")
+
+    assert result is batch
+    assert result["input_features"] is features
+    assert features.requested_dtype == "float16"
+    assert result["attention_mask"] == "unchanged"
 
 
 def test_whisper_lora_config_uses_generic_peft_wrapper() -> None:
@@ -35,6 +63,67 @@ def test_whisper_lora_disables_gradient_checkpointing_by_default() -> None:
     assert _gradient_checkpointing_enabled({}) is False
     assert _gradient_checkpointing_enabled({"gradient_checkpointing": False}) is False
     assert _gradient_checkpointing_enabled({"gradient_checkpointing": True}) is True
+
+
+def test_whisper_preprocessing_worker_count_is_positive() -> None:
+    assert _preprocess_num_proc({}) == 1
+    assert _preprocess_num_proc({"preprocess_num_proc": 4}) == 4
+
+    with pytest.raises(ValueError, match="preprocess_num_proc"):
+        _preprocess_num_proc({"preprocess_num_proc": 0})
+
+
+def test_validation_training_does_not_require_or_open_test_split() -> None:
+    assert _required_training_splits("validation") == {"train", "validation"}
+    assert _required_training_splits("test") == {"train", "validation", "test"}
+
+    with pytest.raises(ValueError, match="evaluation_split"):
+        _required_training_splits("development")
+
+
+def test_comparison_metadata_reuses_manifest_duration_without_opening_audio() -> None:
+    prepared = pd.DataFrame(
+        {
+            "sample_id": ["train-1", "valid-1"],
+            "audio_path": ["train.wav", "valid.wav"],
+            "reference_text": ["학습", "검증"],
+            "split": ["train", "validation"],
+            "audio_duration_seconds": [1.0, 2.5],
+        }
+    )
+
+    def unexpected_reader(path):  # noqa: ANN001, ANN202
+        raise AssertionError(f"duration reader must not open {path}")
+
+    result = _comparison_metadata_frame(prepared, "validation", unexpected_reader)
+
+    assert result.to_dict(orient="records") == [
+        {
+            "sample_id": "valid-1",
+            "audio_path": "valid.wav",
+            "reference_text": "검증",
+            "audio_duration_seconds": 2.5,
+        }
+    ]
+
+
+def test_whisper_lora_uses_low_memory_float16_loading_by_default() -> None:
+    torch_stub = SimpleNamespace(float16="fp16", bfloat16="bf16", float32="fp32")
+
+    assert _model_load_kwargs({}, torch_stub) == {
+        "low_cpu_mem_usage": True,
+        "torch_dtype": "fp16",
+    }
+    assert _model_load_kwargs(
+        {"low_cpu_mem_usage": False, "load_dtype": "auto"}, torch_stub
+    ) == {"low_cpu_mem_usage": False}
+
+
+def test_whisper_lora_rejects_unknown_load_dtype() -> None:
+    torch_stub = SimpleNamespace(float16="fp16", bfloat16="bf16", float32="fp32")
+
+    with pytest.raises(ValueError, match="Unsupported training.load_dtype"):
+        _model_load_kwargs({"load_dtype": "int8"}, torch_stub)
 
 
 def test_whisper_features_request_and_preserve_attention_mask() -> None:
@@ -67,3 +156,63 @@ def test_prediction_frame_uses_aggregate_batch_timing() -> None:
     assert result["latency_seconds"].tolist() == [0.5, 0.5]
     assert result["real_time_factor"].tolist() == [0.2, 0.2]
     assert result["sample_wer"].tolist() == [0.0, 0.0]
+
+
+def test_baseline_cache_identity_changes_with_model_or_references() -> None:
+    frame = pd.DataFrame(
+        {"sample_id": ["a", "b"], "reference_text": ["체결 완료", "압력 정상"]}
+    )
+
+    identity = _baseline_cache_identity("openai/whisper-medium", "abc123", "validation", frame)
+    changed_reference = frame.copy()
+    changed_reference.loc[1, "reference_text"] = "압력 이상"
+
+    assert identity["sample_count"] == 2
+    assert identity["ordered_reference_sha256"] != _baseline_cache_identity(
+        "openai/whisper-medium", "abc123", "validation", changed_reference
+    )["ordered_reference_sha256"]
+    assert identity != _baseline_cache_identity(
+        "openai/whisper-large-v3", "abc123", "validation", frame
+    )
+
+
+def test_distillation_loss_supports_independent_hard_and_soft_weights() -> None:
+    torch = pytest.importorskip("torch")
+    student_logits = torch.tensor([[[2.0, 0.1], [0.2, 1.2]]], requires_grad=True)
+    teacher_logits = torch.tensor([[[3.0, 0.1], [0.1, 2.0]]])
+    labels = torch.tensor([[0, 1]])
+
+    hard_only = distillation_loss(
+        student_logits,
+        teacher_logits,
+        labels,
+        hard_label_weight=1.0,
+        temperature=2.0,
+    )
+    blended = distillation_loss(
+        student_logits,
+        teacher_logits,
+        labels,
+        hard_label_weight=0.5,
+        temperature=2.0,
+    )
+
+    assert hard_only.item() > 0.0
+    assert blended.item() > 0.0
+    blended.backward()
+    assert student_logits.grad is not None
+
+
+def test_distillation_loss_validates_options() -> None:
+    torch = pytest.importorskip("torch")
+    logits = torch.zeros((1, 1, 2))
+    labels = torch.zeros((1, 1), dtype=torch.long)
+
+    with pytest.raises(ValueError, match="hard_label_weight"):
+        distillation_loss(
+            logits,
+            logits,
+            labels,
+            hard_label_weight=1.5,
+            temperature=2.0,
+        )

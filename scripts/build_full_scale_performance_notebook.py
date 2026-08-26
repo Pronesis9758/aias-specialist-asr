@@ -1,0 +1,265 @@
+# ruff: noqa: E501 - notebook source strings intentionally preserve readable Colab lines.
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import nbformat as nbf
+
+ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = ROOT / "notebooks" / "colab_full_scale_performance.ipynb"
+
+
+def build() -> Path:
+    notebook = nbf.v4.new_notebook()
+    notebook["metadata"] = {
+        "accelerator": "GPU",
+        "colab": {"name": OUTPUT.name, "provenance": []},
+        "kernelspec": {"display_name": "Python 3", "name": "python3"},
+    }
+    notebook["cells"] = [
+        nbf.v4.new_markdown_cell(
+            "# 제조 음성 ASR 현업 성능 개선 — 합성 7,200문장 / A100\n\n"
+            "이 노트북은 합성 데이터 계획·생성, `medium`·`turbo`·`large-v3` LoRA "
+            "학습곡선, 디코딩과 IR/NN 보정 탐색, 양자화와 온디바이스 후보 선택을 "
+            "Validation에서 수행합니다. 모든 선택이 끝난 뒤 Test는 한 번만 실행합니다.\n\n"
+            "> 합성 음성 결과만으로 실제 작업자·공장 소음에 대한 생산 준비 완료를 주장할 "
+            "수 없습니다. 실제 배포 전 승인된 shadow test와 사람 검수가 필요합니다."
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 0. 실행 승인과 비용 제어\n\n"
+            "데이터 계획은 바로 실행해도 안전합니다. 음성 7,200개 생성과 A100 9개 학습은 "
+            "시간·컴퓨팅 단위를 사용하므로 해당 Boolean을 직접 `True`로 바꿉니다."
+        ),
+        nbf.v4.new_code_cell(
+            "# GitHub 작업 브랜치와 Colab·Drive 경로를 고정합니다.\n"
+            "GITHUB_REPO_URL = 'https://github.com/Pronesis9758/aias-specialist-asr.git'\n"
+            "GITHUB_BRANCH = 'codex/whisper-benchmark-quantization'\n"
+            "PROJECT_DIR = '/content/AIAS'\n"
+            "DRIVE_ROOT = '/content/drive/MyDrive/AI_Specialist_ASR_Project'\n\n"
+            "# 대규모 비용 단계는 사용자가 내용을 확인한 뒤 명시적으로 켭니다.\n"
+            "GENERATE_SYNTHETIC_AUDIO = False\n"
+            "RUN_A100_LORA = False\n"
+            "RUN_DECODING_AND_CORRECTION = False\n"
+            "RUN_QUANTIZATION_AND_ONDEVICE = False\n"
+            "RUN_FINAL_TEST_ONCE = False"
+        ),
+        nbf.v4.new_markdown_cell("## 1. A100와 Google Drive 연결"),
+        nbf.v4.new_code_cell(
+            "# 현재 할당된 GPU를 먼저 확인합니다. A100이 아니면 대형 LoRA 단계가 즉시 중단됩니다.\n"
+            "!nvidia-smi\n"
+            "from pathlib import Path\n"
+            "from google.colab import drive\n\n"
+            "# 이미 연결된 Drive는 재승인하지 않고 그대로 재사용합니다.\n"
+            "drive_root = Path('/content/drive/MyDrive')\n"
+            "if not drive_root.is_dir():\n"
+            "    drive.mount('/content/drive')\n"
+            "if not drive_root.is_dir():\n"
+            "    raise RuntimeError('Google Drive 연결을 확인할 수 없습니다.')"
+        ),
+        nbf.v4.new_markdown_cell("## 2. 최신 코드 동기화와 의존성 설치"),
+        nbf.v4.new_code_cell(
+            "# 저장소가 없으면 복제하고, 있으면 작업 브랜치를 fast-forward로 갱신합니다.\n"
+            "import os\n"
+            "import subprocess\n"
+            "import sys\n\n"
+            "if not Path(PROJECT_DIR).exists():\n"
+            "    subprocess.run([\n"
+            "        'git', 'clone', '--branch', GITHUB_BRANCH, '--single-branch',\n"
+            "        GITHUB_REPO_URL, PROJECT_DIR,\n"
+            "    ], check=True)\n"
+            "else:\n"
+            "    subprocess.run(['git', '-C', PROJECT_DIR, 'fetch', 'origin', GITHUB_BRANCH], check=True)\n"
+            "    subprocess.run(['git', '-C', PROJECT_DIR, 'checkout', GITHUB_BRANCH], check=True)\n"
+            "    subprocess.run([\n"
+            "        'git', '-C', PROJECT_DIR, 'merge', '--ff-only', f'origin/{GITHUB_BRANCH}',\n"
+            "    ], check=True)\n"
+            "os.chdir(PROJECT_DIR)\n"
+            "print('Git commit:', subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())"
+        ),
+        nbf.v4.new_code_cell(
+            "# Colab 기본 패키지 충돌원을 제거하고 학습·TTS 의존성을 설치합니다.\n"
+            "%pip uninstall -y torchao gradio gradio-client\n"
+            "%pip install -q -e '.[train]' 'transformers>=4.46,<5' 'peft>=0.14,<0.19' 'edge-tts>=7,<8'\n\n"
+            "# 모든 AIAS CLI 호출을 같은 Python과 실시간 로그 환경으로 실행합니다.\n"
+            "def run_aias(*args):\n"
+            "    command = [sys.executable, '-m', 'aias_specialist.cli', *args]\n"
+            "    print('\\nRunning:', ' '.join(command), flush=True)\n"
+            "    subprocess.run(command, check=True, env={**os.environ, 'PYTHONUNBUFFERED': '1'})"
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 3. 7,200문장 데이터 계획 검증\n\n"
+            "Train 6,000 / Validation 600 / Test 600, 합성 화자 프로필 24개, split 간 화자·문장 "
+            "비중복, 핵심 용어 Train 100~200회, Test 용어 1,000회 이상을 코드로 강제합니다."
+        ),
+        nbf.v4.new_code_cell(
+            "# 음성을 만들기 전에 작은 CSV 계획만 생성해 분할과 용어 빈도를 검증합니다.\n"
+            "import json\n"
+            "import pandas as pd\n"
+            "import yaml\n\n"
+            "DATA_SPEC = 'configs/data/synthetic_manufacturing_7200.yaml'\n"
+            "run_aias('plan-synthetic-dataset', '--spec', DATA_SPEC)\n"
+            "synthetic_root = Path(DRIVE_ROOT) / 'data/synthetic/manufacturing_7200'\n"
+            "plan = pd.read_csv(synthetic_root / 'manifest.plan.csv')\n"
+            "display(plan.groupby('split').size().rename('samples'))\n"
+            "display(json.loads((synthetic_root / 'plan_summary.json').read_text(encoding='utf-8')))"
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 4. 합성 음성 생성\n\n"
+            "Edge TTS 결과를 16 kHz mono WAV로 변환하고 네 가지 소음 조건을 적용합니다. "
+            "완성 WAV는 Drive에 캐시되어 중단 후 다시 실행하면 이미 생성된 파일을 건너뜁니다."
+        ),
+        nbf.v4.new_code_cell(
+            "# 최초 한 번만 GENERATE_SYNTHETIC_AUDIO=True로 바꿔 실행합니다.\n"
+            "if GENERATE_SYNTHETIC_AUDIO:\n"
+            "    run_aias('synthesize-dataset', '--spec', DATA_SPEC, '--concurrency', '4')\n"
+            "else:\n"
+            "    print('음성 생성을 건너뜁니다. 전체 학습 전에는 반드시 True로 한 번 실행하세요.')\n\n"
+            "# 학습 단계가 잘못된 계획 CSV를 사용하지 않도록 최종 manifest 존재를 확인합니다.\n"
+            "FULL_CONFIG = 'configs/synthetic_manufacturing_full_scale.yaml'\n"
+            "manifest_path = synthetic_root / 'manifest.csv'\n"
+            "print('Final manifest exists:', manifest_path.exists(), manifest_path)"
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 5. A100 LoRA 학습곡선\n\n"
+            "세 모델을 같은 batch=1, accumulation=8, learning rate 조건으로 3h·5h·10h "
+            "데이터에서 비교합니다. 이 9개 실행은 Validation만 보며 Test를 사용하지 않습니다."
+        ),
+        nbf.v4.new_code_cell(
+            "# A100이 아니거나 전체 manifest가 없으면 비용이 발생하기 전에 중단됩니다.\n"
+            "LORA_SPEC = 'configs/training/synthetic_manufacturing_lora_a100.yaml'\n"
+            "if RUN_A100_LORA:\n"
+            "    if not manifest_path.exists():\n"
+            "        raise FileNotFoundError('4단계에서 합성 WAV와 manifest를 먼저 생성하세요.')\n"
+            "    run_aias('lora-learning-curve', '--spec', LORA_SPEC)\n"
+            "else:\n"
+            "    print('A100 LoRA를 건너뜁니다. 실행할 때 RUN_A100_LORA=True로 바꾸세요.')\n\n"
+            "lora_dir = Path(DRIVE_ROOT) / 'artifacts/training/synthetic-manufacturing-lora-a100-v1'\n"
+            "curve_path = lora_dir / 'lora_learning_curve.csv'\n"
+            "if curve_path.exists():\n"
+            "    display(pd.read_csv(curve_path))"
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 6. 최적 LoRA 병합, 디코딩과 후처리 탐색\n\n"
+            "최종 10h Validation 1위 어댑터를 base model과 병합한 뒤 beam, initial prompt, "
+            "hotwords, VAD를 비교합니다. 이어 alias·IR·NN 후보를 Validation에서만 적용하고 "
+            "악화 문장 비율 0% 조건을 통과한 후보만 선택합니다."
+        ),
+        nbf.v4.new_code_cell(
+            "# LoRA 선택 결과를 실제 faster-whisper 변환·양자화가 가능한 병합 모델로 만듭니다.\n"
+            "lora_selection = lora_dir / 'lora_selection.yaml'\n"
+            "if RUN_DECODING_AND_CORRECTION:\n"
+            "    run_aias('merge-selected-lora', '--selection', str(lora_selection), '--config', FULL_CONFIG)\n"
+            "    run_aias('decoding-sweep-selected-lora', '--selection', str(lora_selection), '--config', FULL_CONFIG)\n"
+            "else:\n"
+            "    print('디코딩·보정 탐색을 건너뜁니다.')\n\n"
+            "# 생성된 디코딩 실험을 선택 ID로 찾아 이후 단계의 입력으로 사용합니다.\n"
+            "decoding_selection = None\n"
+            "if lora_selection.exists():\n"
+            "    lora_payload = yaml.safe_load(lora_selection.read_text(encoding='utf-8'))\n"
+            "    decoding_id = f\"synthetic-lora-decoding-{lora_payload['selection_id']}\"\n"
+            "    decoding_dir = Path(DRIVE_ROOT) / 'artifacts/benchmarks' / decoding_id\n"
+            "    decoding_selection = decoding_dir / 'model_selection.yaml'\n"
+            "    if (decoding_dir / 'benchmark_comparison.csv').exists():\n"
+            "        display(pd.read_csv(decoding_dir / 'benchmark_comparison.csv'))"
+        ),
+        nbf.v4.new_code_cell(
+            "# 선택된 디코딩 run의 Validation 오류를 채굴해 체별→체결 같은 보강 후보를 남깁니다.\n"
+            "if RUN_DECODING_AND_CORRECTION and decoding_selection.exists():\n"
+            "    decoding_payload = yaml.safe_load(decoding_selection.read_text(encoding='utf-8'))['selection']\n"
+            "    decoding_table = pd.read_csv(decoding_dir / 'benchmark_comparison.csv')\n"
+            "    source_row = decoding_table.loc[decoding_table['run_id'].astype(str).eq(str(decoding_payload['run_id']))].iloc[0]\n"
+            "    source_run = Path(source_row['run_dir'])\n"
+            "    error_candidates = decoding_dir / 'validation_term_error_candidates.csv'\n"
+            "    run_aias('mine-term-errors', '--predictions', str(source_run / 'predictions_baseline.csv'), '--terms', str(source_run / 'domain_terms.snapshot.csv'), '--output', str(error_candidates))\n"
+            "    display(pd.read_csv(error_candidates).head(30))"
+        ),
+        nbf.v4.new_code_cell(
+            "# 기존 안전 후보군의 ID와 base config를 이번 LoRA 실험에 맞게 바꿔 실행합니다.\n"
+            "correction_selection = None\n"
+            "if RUN_DECODING_AND_CORRECTION and decoding_selection.exists():\n"
+            "    correction_spec = yaml.safe_load(Path('configs/correction/synthetic_manufacturing_correction_sweep.yaml').read_text(encoding='utf-8'))\n"
+            "    correction_id = f\"synthetic-lora-correction-{lora_payload['selection_id']}\"\n"
+            "    correction_spec['correction_sweep']['id'] = correction_id\n"
+            "    correction_spec['correction_sweep']['base_config'] = str(Path(FULL_CONFIG).resolve())\n"
+            "    runtime_correction_spec = Path('/content/aias_full_scale_correction.yaml')\n"
+            "    runtime_correction_spec.write_text(yaml.safe_dump(correction_spec, allow_unicode=True, sort_keys=False), encoding='utf-8')\n"
+            "    run_aias('correction-sweep', '--spec', str(runtime_correction_spec), '--selection', str(decoding_selection))\n"
+            "    correction_dir = Path(DRIVE_ROOT) / 'artifacts/correction' / correction_id\n"
+            "    run_aias('select-correction', '--sweep-dir', str(correction_dir), '--reviewer', 'AUTOMATED_SYNTHETIC_VALIDATION', '--reason', 'Validation 개선 및 문장 악화율 gate 통과 후보', '--automated-proxy')\n"
+            "    correction_selection = correction_dir / 'correction_selection.yaml'\n"
+            "    display(pd.read_csv(correction_dir / 'correction_sweep_comparison.csv'))"
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 7. 양자화와 온디바이스 후보\n\n"
+            "선정된 병합 LoRA 모델을 float16과 int8-float16으로 비교합니다. Accuracy-first와 "
+            "edge profile 모두 정확도 gate를 먼저 통과해야 하며, 통과 후보가 없으면 blocked입니다."
+        ),
+        nbf.v4.new_code_cell(
+            "# 선택된 correction 정책을 최종 설정 사본에 반영해 양자화와 Test가 같은 정책을 씁니다.\n"
+            "quantization_selection = None\n"
+            "if RUN_QUANTIZATION_AND_ONDEVICE:\n"
+            "    if correction_selection is None or not correction_selection.exists():\n"
+            "        raise FileNotFoundError('6단계 디코딩·보정 선택을 먼저 완료하세요.')\n"
+            "    final_config = yaml.safe_load(Path(FULL_CONFIG).read_text(encoding='utf-8'))\n"
+            "    selected_correction = yaml.safe_load(correction_selection.read_text(encoding='utf-8'))['selection']['correction']\n"
+            "    final_config['correction'] = selected_correction\n"
+            "    runtime_final_config = Path('/content/aias_full_scale_final_config.yaml')\n"
+            "    runtime_final_config.write_text(yaml.safe_dump(final_config, allow_unicode=True, sort_keys=False), encoding='utf-8')\n"
+            "    quant_spec = yaml.safe_load(Path('configs/quantization/synthetic_manufacturing_whisper_quantization.yaml').read_text(encoding='utf-8'))\n"
+            "    quant_id = f\"synthetic-lora-quantization-{lora_payload['selection_id']}\"\n"
+            "    quant_spec['quantization']['id'] = quant_id\n"
+            "    quant_spec['quantization']['base_config'] = str(runtime_final_config)\n"
+            "    runtime_quant_spec = Path('/content/aias_full_scale_quantization.yaml')\n"
+            "    runtime_quant_spec.write_text(yaml.safe_dump(quant_spec, allow_unicode=True, sort_keys=False), encoding='utf-8')\n"
+            "    run_aias('quantization-sweep', '--spec', str(runtime_quant_spec), '--selection', str(decoding_selection))\n"
+            "    quant_dir = Path(DRIVE_ROOT) / 'artifacts/quantization' / quant_id\n"
+            "    quant_table = pd.read_csv(quant_dir / 'quantization_comparison.csv')\n"
+            "    display(quant_table)"
+        ),
+        nbf.v4.new_code_cell(
+            "# 정확도 우선·edge-balanced·edge-compact 제약을 각각 독립적으로 판정합니다.\n"
+            "if RUN_QUANTIZATION_AND_ONDEVICE:\n"
+            "    deployment_dir = quant_dir / 'deployment'\n"
+            "    run_aias('select-deployment-profiles', '--comparison', str(quant_dir / 'quantization_comparison.csv'), '--profiles', 'configs/deployment/ondevice_profiles.yaml', '--output-dir', str(deployment_dir))\n"
+            "    deployment = yaml.safe_load((deployment_dir / 'deployment_selections.yaml').read_text(encoding='utf-8'))\n"
+            "    display(deployment)\n"
+            "    accuracy_choice = deployment['profiles']['accuracy-first']\n"
+            "    if accuracy_choice['status'] != 'selected':\n"
+            "        raise RuntimeError('Recall 85%, CER 7%, WER 15%를 만족한 최종 후보가 없습니다.')\n"
+            "    run_aias('select-quantization', '--quantization-dir', str(quant_dir), '--variant-id', accuracy_choice['member_id'], '--reviewer', 'AUTOMATED_SYNTHETIC_VALIDATION', '--reason', '정확도 gate를 통과한 accuracy-first 후보', '--automated-proxy')\n"
+            "    quantization_selection = quant_dir / 'quantization_selection.yaml'"
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 8. 고정 Test 1회\n\n"
+            "모델·학습량·디코딩·보정·양자화 선택이 모두 끝난 뒤에만 실행합니다. 같은 선택 "
+            "폴더에 결과가 있으면 CLI가 새 추론을 하지 않고 기존 결과를 재사용합니다."
+        ),
+        nbf.v4.new_code_cell(
+            "# RUN_FINAL_TEST_ONCE=True는 모든 Validation 결과를 검토한 뒤 마지막에 한 번만 설정합니다.\n"
+            "if RUN_FINAL_TEST_ONCE:\n"
+            "    if quantization_selection is None or not quantization_selection.exists():\n"
+            "        raise FileNotFoundError('7단계의 최종 양자화 선택을 먼저 완료하세요.')\n"
+            "    run_aias('finalize-evaluation', '--selection', str(quantization_selection), '--config', str(runtime_final_config))\n"
+            "    final_result = json.loads((quant_dir / 'final_test_result.json').read_text(encoding='utf-8'))\n"
+            "    display(final_result['quality_gate'])\n"
+            "    print('Final report:', final_result['report_path'])\n"
+            "else:\n"
+            "    print('Test는 아직 열지 않았습니다. 모든 Validation 선택이 끝난 뒤 True로 바꾸세요.')"
+        ),
+        nbf.v4.new_markdown_cell(
+            "## 9. 반복 개선 규칙\n\n"
+            "Recall이 85% 미만이면 Validation 오류 CSV의 상위 용어를 우선하여 각 20~50개 "
+            "새 문장·다른 합성 화자·속도·소음·숫자·단위 조합으로 다음 데이터 버전을 만듭니다. "
+            "같은 Test를 보며 사전이나 threshold를 바꾸지 않습니다. Edge 후보가 없으면 "
+            "지식 증류를 별도 Validation 실험으로 수행합니다. Pruning은 CT2 dense runtime에서 "
+            "실제 크기/RTF 이점이 입증되기 전에는 생산 후보로 채택하지 않습니다."
+        ),
+    ]
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    nbf.write(notebook, OUTPUT)
+    return OUTPUT
+
+
+if __name__ == "__main__":
+    print(build())

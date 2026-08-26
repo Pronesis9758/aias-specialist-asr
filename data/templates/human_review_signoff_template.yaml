@@ -1,0 +1,12 @@
+human_review:
+  reviewer: TO_BE_COMPLETED
+  reviewed_at: TO_BE_COMPLETED
+  transcript_labels_verified: false
+  privacy_approval_verified: false
+  domain_terms_verified: false
+  model_tradeoff_verified: false
+  report_conclusions_verified: false
+  decision: TO_BE_DECIDED
+  conclusion: TO_BE_COMPLETED
+  limitations:
+    - 실제 평가 결과를 확인한 뒤 작성

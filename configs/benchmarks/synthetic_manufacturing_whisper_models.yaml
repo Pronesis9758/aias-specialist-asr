@@ -1,0 +1,68 @@
+benchmark:
+  id: synthetic-manufacturing-whisper-model-benchmark-v6
+  name: 합성 제조 음성 Validation 기반 Whisper 현업 목표 비교
+  base_config: configs/synthetic_manufacturing_sample.yaml
+  evaluation_split: validation
+  isolated_process: true
+  continue_on_error: true
+  models:
+    - id: tiny
+      backend: faster_whisper
+      repo_id: openai/whisper-tiny
+      revision: main
+      format: transformers
+      local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/ct2/tiny/float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+      beam_size: 5
+    - id: base
+      backend: faster_whisper
+      repo_id: openai/whisper-base
+      revision: main
+      format: transformers
+      local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/ct2/base/float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+      beam_size: 5
+    - id: small
+      backend: faster_whisper
+      repo_id: openai/whisper-small
+      revision: main
+      format: transformers
+      local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/ct2/small/float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+      beam_size: 5
+    - id: medium
+      backend: faster_whisper
+      repo_id: openai/whisper-medium
+      revision: main
+      format: transformers
+      local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/ct2/medium/float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+      beam_size: 5
+    - id: turbo
+      backend: faster_whisper
+      repo_id: openai/whisper-large-v3-turbo
+      revision: main
+      format: transformers
+      local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/ct2/turbo/float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+      beam_size: 5
+    - id: large-v3
+      backend: faster_whisper
+      repo_id: openai/whisper-large-v3
+      revision: main
+      format: transformers
+      local_dir: /content/drive/MyDrive/AI_Specialist_ASR_Project/models/ct2/large-v3/float16
+      conversion_quantization: float16
+      device: cuda
+      compute_type: float16
+      beam_size: 5
